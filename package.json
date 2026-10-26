@@ -14,9 +14,9 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rirko/dsh-melody-launcher.git"
+    "url": "git+https://github.com/YukimuraSol/DSL-Offline.git"
   },
-  "homepage": "https://github.com/rirko/dsh-melody-launcher#readme",
+  "homepage": "https://github.com/YukimuraSol/DSL-Offline",
   "engines": {
     "node": ">=20"
   },
