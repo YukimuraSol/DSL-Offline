@@ -256,6 +256,21 @@ describe('Profile service', () => {
     expect(manifest.name).toBe('dsh-profile-web')
     expect(manifest.dependencies).toEqual({ '@demo/plugin': '1.0.0' })
   })
+
+  it('settings 里残留的 profile 名不会被补进列表，也不会被 mkdir 成空壳', async () => {
+    const env = await fixture()
+    // 旧版本会在 settings 里留下一个已不存在的 profile 名。
+    const stale = 'ghost-pack'
+    const options = { ...env.options, readSettings: async () => ({ ...env.getSettings(), profileName: stale }) }
+
+    const profiles = await listProfiles(options)
+
+    // 关键：不能为了「补全」这个名字而 mkdir 目录、写 profile.yaml。
+    // 那种空壳没有 package.json，一旦被写回 settings，内核启动就是 exit 1。
+    await expect(access(path.join(env.dshHome, 'profiles', stale))).rejects.toThrow()
+    expect(profiles.map(item => item.id)).toEqual(['web'])
+    expect(profiles.some(item => item.id === stale)).toBe(false)
+  })
 })
 
 describe('官方桌面端独占的 desktop 目录：只看不写', () => {

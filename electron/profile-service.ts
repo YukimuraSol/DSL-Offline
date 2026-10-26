@@ -352,7 +352,16 @@ export async function listProfiles(options: ProfileServiceOptions): Promise<Prof
   await mkdir(root, { recursive: true })
   const entries = await readdir(root, { withFileTypes: true })
   const names = entries.filter(entry => entry.isDirectory() && isSafeProfileName(entry.name) && !isDesktopHomeProfile(entry.name)).map(entry => entry.name)
-  if (!names.includes(current.profileName)) names.push(current.profileName)
+  // 只为真实存在的 profile 建元数据。settings 里残留的旧名字不能凭空补进来——
+  // 下面的循环会 mkdir + 写 profile.yaml，造出一个没有 package.json 的空壳目录，
+  // 而 DSH 内核只认 package.json，于是那个名字一旦被写回 settings，启动就 exit 1。
+  if (
+    !names.includes(current.profileName) &&
+    !isDesktopHomeProfile(current.profileName) &&
+    await exists(path.join(root, current.profileName, 'package.json'))
+  ) {
+    names.push(current.profileName)
+  }
   // Existing installations predate profile.yaml. Materialize metadata lazily
   // while scanning so every visible Profile is self-contained afterwards.
   // The manifest name is normalized in the same pass: profiles seeded by older

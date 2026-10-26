@@ -147,12 +147,18 @@ export function packKernel(
   return { executable: fallbackExecutable, version: null, source: 'launcher' }
 }
 
-/** 包的 profile 目录名：优先同名 profile，其次 web（老包），最后退回包 id。 */
+/**
+ * 包的 profile 目录名：优先同名 profile，其次 web（老包），最后退回包 id。
+ *
+ * 判据必须是「目录里有 package.json」，不能只看目录存在：启动器写元数据时会顺手
+ * mkdir 出同名空壳目录，只看存在就会把空壳当成 profile，启动参数变成
+ * `--profile <空壳>`，DSH 认不出（它要求 package.json），进程直接 exit 1。
+ */
 export function resolveProfileName(homePath: string | null, packId: string): string {
   if (!homePath) return packId
   const profiles = path.join(homePath, 'profiles')
-  if (existsSync(path.join(profiles, packId))) return packId
-  if (existsSync(path.join(profiles, 'web'))) return 'web'
+  if (existsSync(path.join(profiles, packId, 'package.json'))) return packId
+  if (existsSync(path.join(profiles, 'web', 'package.json'))) return 'web'
   return packId
 }
 
