@@ -8,6 +8,7 @@ import {
   defaultSettings,
   mergeStoredSettings,
   packsRootInsideInstall,
+  readStoredDshInstallPath,
   usesOnDemandDsh,
   validateSettings,
 } from '../electron/settings'
@@ -310,6 +311,29 @@ describe('adoptDetectedDsh', () => {
       executable: null,
       source: null,
     })).toBe(baseSettings)
+  })
+})
+
+describe('readStoredDshInstallPath（启动最早期只读内核目录）', () => {
+  it('读 settings.json 里的绝对路径，缺失/非法/坏 JSON 都落回缺省位置', async () => {
+    // 内核释放必须早于建 SettingsStore，那时只能用这个函数问「内核该释放到哪」；
+    // 它绝不能探测、绝不能建 store，也不能被相对路径带跑。
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'settings-install-path-'))
+    temporaryRoots.push(directory)
+    const filePath = path.join(directory, 'settings.json')
+    const fallback = path.join(directory, 'dsh-runtime')
+
+    await expect(readStoredDshInstallPath(filePath, fallback)).resolves.toBe(fallback)
+
+    await writeFile(filePath, JSON.stringify({ dshInstallPath: 'relative/dsh-runtime' }), 'utf8')
+    await expect(readStoredDshInstallPath(filePath, fallback)).resolves.toBe(fallback)
+
+    await writeFile(filePath, '{ 不是 json', 'utf8')
+    await expect(readStoredDshInstallPath(filePath, fallback)).resolves.toBe(fallback)
+
+    const custom = path.join(directory, 'custom-runtime')
+    await writeFile(filePath, JSON.stringify({ dshInstallPath: custom }), 'utf8')
+    await expect(readStoredDshInstallPath(filePath, fallback)).resolves.toBe(custom)
   })
 })
 

@@ -327,6 +327,24 @@ export function mergeStoredSettings(defaults: AppSettings, stored: Partial<AppSe
 }
 
 /**
+ * 只读 settings.json 里的内核目录，不建 store、不探测。
+ *
+ * 启动顺序需要用：随包内核必须**先**释放进内核目录，之后才能建 SettingsStore —— 否则
+ * 第一次读设置就会立刻探测 DSH，而那一刻内核还在拷（首启几百 MB、几分钟），只能探到
+ * PATH 上的系统 dsh；这个结果会被 adoptDetectedDsh 采纳并写进 settings.json，
+ * launchExecutable 从此钉死在系统 dsh 上，usesOnDemandDsh 也不再成立，没人会把它收回来。
+ */
+export async function readStoredDshInstallPath(filePath: string, fallback: string): Promise<string> {
+  try {
+    const raw = JSON.parse(await readFile(filePath, 'utf8')) as { dshInstallPath?: unknown }
+    if (typeof raw.dshInstallPath === 'string' && path.isAbsolute(raw.dshInstallPath)) return raw.dshInstallPath
+  } catch {
+    // 首次启动还没有 settings.json：落回缺省位置。
+  }
+  return fallback
+}
+
+/**
  * 判断当前配置是否走「用 npx 临时拉取 DSH」的方式。
  * 是的话说明还没绑定到某个具体安装，可以在检测到本地 DSH 后自动切换过去。
  */

@@ -22,7 +22,7 @@
  * 弹目录框与 webContents.send 都在 electron/ipc.ts 里接。
  */
 
-import { mkdir, readFile, rename, rm, stat, statfs, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, rename, rm, stat, statfs, symlink, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { blockedReason, failureReason, folderNameIssue, IMPORT_STAGE_TEXT, instanceNameIssue, packDirName } from '../src/lib/pack-import'
 import type { AppSettings, PackImportOutcome, PackImportProgress, PackImportRequest, PackImportStage } from '../src/types'
@@ -32,7 +32,7 @@ import { kernelIsComplete } from './kernel-seed'
 import { integrityOf, readOfflineManifest, type OfflineManifest, type OfflineManifestKernel } from './pack-offline-export'
 import { extractOfflinePackZip, MAX_EXTRACTED_BYTES, OfflineZipError, unsafeZipEntry, ZIP_TEMP_PREFIX } from './pack-offline-zip'
 import { readTarGz } from './tar-archive'
-import { importOfflinePack, OfflineImportBlockedError, type OfflineImportReport } from './pack-offline-import'
+import { IMPORT_REPORT_FILENAME, importOfflinePack, OfflineImportBlockedError, type OfflineImportReport } from './pack-offline-import'
 import { readPackRegistry, type PackRecord } from './pack-registry'
 import { dshVersionRoot } from './runtime-versions'
 
@@ -46,8 +46,17 @@ export interface OfflinePackImportDeps {
   emitProgress: (progress: PackImportProgress) => void
   /** 只进日志。给用户看的是返回值里的 reason，那里不带路径。 */
   log?: (message: string) => void
+  /**
+   * 导入成功、且本机**还没有**激活包时，把「当前整合包」指针切到新包（缺陷 3）。
+   * 已有激活包时本层根本不会调用它 —— 别把用户正在用的那个顶掉。
+   * ipc.ts 里用 settings.readStored() + settings.save() 实现（与 main.ts 的 activatePack 同一写法）；
+   * 不传就只是不切指针，导入本身照常完成。
+   */
+  activatePack?: (packId: string) => Promise<void>
   /** 解压临时目录的根；只给测试用（便于断言一个文件都没留下），生产走 os.tmpdir()。 */
   tempRoot?: string
+  /** junction 的建 / 删 / 穿透读；只给测试注入（真机现场：结构正常但穿透读不通）。 */
+  junctionIo?: Partial<JunctionLinkIo>
 }
 
 export interface OfflinePackImport {
@@ -116,6 +125,60 @@ function normalizeVersion(version: string): string {
 /** 内核的启动外壳：kernelIsComplete 认的就是这一个文件（再配上 @deepseek-ai/dsh 的 package.json）。 */
 function kernelShellName(): string {
   return process.platform === 'win32' ? 'dsh.cmd' : 'dsh'
+}
+
+/**
+ * junction 建好之后**唯一**的验收标准：从链接穿透读得到目标里的东西。
+ *
+ * 真机现场（缺陷 1）：18 个插件的门控 junction 全部 `ERROR_CANT_RESOLVE_FILENAME`，
+ * 可重解析点结构完全正常（Substitute / Print Name 都是正确绝对路径），目标里的
+ * package.json 也在盘上；而在同一位置、指向同一目标**新建**一条就立刻能读。
+ * 所以「结构对不对」判不了对错，只有「从链接读一次」才算数。
+ */
+async function junctionReadable(linkPath: string): Promise<boolean> {
+  // 插件本体根上一定有 package.json；内核树根上没有，退到「列目录非空」。
+  const hasManifest = await readFile(path.join(linkPath, 'package.json'), 'utf8').then(() => true).catch(() => false)
+  if (hasManifest) return true
+  return readdir(linkPath).then(entries => entries.length > 0).catch(() => false)
+}
+
+/** junction 的「建 / 删 / 穿透读」三件套；测试可以注入一个永远读不通的实现。 */
+export interface JunctionLinkIo {
+  readable: (linkPath: string) => Promise<boolean>
+  remove: (linkPath: string) => Promise<void>
+  create: (targetPath: string, linkPath: string) => Promise<void>
+}
+
+const junctionLinkIo: JunctionLinkIo = {
+  readable: junctionReadable,
+  // 只删链接本身。lstat 认出来不是链接就什么都不做——绝不对一个真实目录做递归删除。
+  remove: async linkPath => {
+    const info = await lstat(linkPath).catch(() => null)
+    if (info?.isSymbolicLink()) await unlink(linkPath)
+  },
+  create: async (targetPath, linkPath) => {
+    await mkdir(path.dirname(linkPath), { recursive: true })
+    await symlink(targetPath, linkPath, 'junction')
+  },
+}
+
+/**
+ * 建 junction 并立刻穿透校验；不通就删掉重建一次。
+ *
+ * 顺序是硬要求：**目标真正落盘之后**才建（先铺内容、后建链接）。建完读一次，
+ * 读不通就按目标当前状态重建；两次都不通返回 ok:false 交给调用方记日志 / 记 warning，
+ * 绝不因为一条链接让整个导入崩掉。rebuilt = 这条链接是本次新建或重建过的。
+ */
+export async function ensureJunction(options: {
+  targetPath: string
+  linkPath: string
+  io?: Partial<JunctionLinkIo>
+}): Promise<{ ok: boolean; rebuilt: boolean }> {
+  const io: JunctionLinkIo = { ...junctionLinkIo, ...options.io }
+  if (await io.readable(options.linkPath).catch(() => false)) return { ok: true, rebuilt: false }
+  await io.remove(options.linkPath).catch(() => undefined)
+  await io.create(options.targetPath, options.linkPath)
+  return { ok: await io.readable(options.linkPath).catch(() => false), rebuilt: true }
 }
 
 /** 目标盘的可用字节；拿不到（古老的 fs / 权限怪）就返回 null，退回「写的时候撞 ENOSPC 再说」。 */
@@ -274,6 +337,28 @@ export function createOfflinePackImport(deps: OfflinePackImportDeps): OfflinePac
           log(`[pack-import] 清理半成品失败（${home}）：${error instanceof Error ? error.message : String(error)}`)
         })
       }
+      /** 链接验收没过的几条：核心已经写过 import-report.json，装完补进去，日志与报告都留痕。 */
+      const junctionWarnings: string[] = []
+      /**
+       * 缺陷 1：链接的唯一验收方式是**穿透读**。目标必须已经落盘才建；建完立刻读一次，
+       * 不通就按当前状态重建一次；仍不通只记日志 + warning，绝不让一条链接崩掉整个导入。
+       */
+      const verifyJunction = async (label: string, targetPath: string, linkPath: string): Promise<void> => {
+        let outcome: { ok: boolean; rebuilt: boolean }
+        try {
+          outcome = await ensureJunction({ targetPath, linkPath, io: deps.junctionIo })
+        } catch (error) {
+          outcome = { ok: false, rebuilt: true }
+          log(`[pack-import] ${label}的链接建立/校验出错（${linkPath}）：${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+        }
+        if (outcome.ok) {
+          if (outcome.rebuilt) log(`[pack-import] 已重建读不通的链接：${linkPath}`)
+          return
+        }
+        const warning = `${label}的链接建好后穿透读不通，重建一次仍不通（${linkPath}）。`
+        junctionWarnings.push(warning)
+        log(`[pack-import] 警告：${warning}`)
+      }
 
       let home: string | null = null
       /** 压缩包解出来的临时目录：成功、失败、取消都要删，所以在 finally 里收。 */
@@ -349,7 +434,10 @@ export function createOfflinePackImport(deps: OfflinePackImportDeps): OfflinePac
           log(`[pack-import] 随包内核已落进新实例：${target}`)
         } else if (kernelModules) {
           // 内核树只读共享：junction 让新实例「用得上」本机这份内核，但删包时删的是自己那份。
-          await symlink(kernelModules, path.join(home, 'profiles', 'node_modules'), 'junction')
+          // 缺陷 1（跨盘/只读共享这条分支）：建完必须立刻穿透验收，链接停在被建那一刻的状态是不可信的。
+          const sharedLink = path.join(home, 'profiles', 'node_modules')
+          await symlink(kernelModules, sharedLink, 'junction')
+          await verifyJunction('内核', kernelModules, sharedLink)
         } else {
           // 走不到：上面「本机没有 + 包里也没有」已经 throws 过了。留个兜底，别让类型收窄骗人。
           throw new ImportStop('内核没准备好，这次导入先停下。')
@@ -370,12 +458,41 @@ export function createOfflinePackImport(deps: OfflinePackImportDeps): OfflinePac
         log(`[pack-import] 装配完成：${report.profileDir}（插件 ${report.counts.plugins} / junction ${report.counts.junctions} / ${report.durationMs}ms）`)
         if (report.warnings.length > 0) log(`[pack-import] 警告：${report.warnings.join('；')}`)
 
+        // 缺陷 1：装插件的顺序是「建本体目录 → 边写文件 → 建门控 junction」，链接落盘时目标刚建好；
+        // 那一刻系统若解析不了目标，留下的就是「重解析点结构完全正常、穿透读却全部失败」的链接
+        // （真机 18 条全这样）。现在 .dsh-launcher-plugin-bodies/<pkg> 已经全部铺满，逐条从链接穿透复核；
+        // 读不通就删掉按当前状态重建一次，仍不通只记 warning。
+        for (const plugin of report.plugins) {
+          await verifyJunction(`插件 ${plugin.name} `, plugin.bodyDir, plugin.junction)
+        }
+
         // 登记：只写 packs.json，不动磁盘。失败也不影响结果——家目录已经在整合包根目录下，
         // 列表刷新时的自动收编会把它捡起来，只是名字会退回目录名。
+        let adopted = false
         try {
           await adoptPackFromFolder({ registryPath: deps.registryPath, homePath: home, name: displayName })
+          adopted = true
         } catch (error) {
           log(`[pack-import] 登记失败，等列表自动收编：${error instanceof Error ? error.message : String(error)}`)
+        }
+
+        // 缺陷 3：导入完首页还停在「还没有整合包」，尽管列表里已经有包。只有本机**还没有**激活包时
+        // 才把指针切到新包；已有激活包的一个字都不动（别顶掉用户正在用的那个）。登记失败也不切：
+        // 指针指向一个还没进 packs.json 的包，首页反而会显示成「激活的包不存在」。
+        if (adopted) {
+          try {
+            const latest = await deps.readSettings()
+            if (!latest.activePackId) await deps.activatePack?.(packId)
+          } catch (error) {
+            log(`[pack-import] 切换激活包失败，保持原状：${error instanceof Error ? error.message : String(error)}`)
+          }
+        }
+
+        // 报告已经被核心写盘（import-report.json）；链接验收的痕迹补写回去，售后打开报告能看到。
+        if (junctionWarnings.length > 0) {
+          report.warnings.push(...junctionWarnings)
+          await writeFile(path.join(report.profileDir, IMPORT_REPORT_FILENAME), JSON.stringify(report, null, 2) + '\n', 'utf8')
+            .catch(error => log(`[pack-import] 补写报告失败：${error instanceof Error ? error.message : String(error)}`))
         }
         pushStage('done')
         return { ok: true, packId, packName: displayName }

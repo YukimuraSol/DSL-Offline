@@ -1175,6 +1175,15 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
 
   const offlinePackImport = createOfflinePackImport({
     readSettings: () => settings.read(),
+    // 缺陷 3：导入成功且本机还没有激活包时，把它设为当前整合包（否则首页仍显示空状态）。
+    // 与 main.ts 的 activatePack 同一写法：只写指针，不重启任何东西；已有激活包时绝不顶掉。
+    activatePack: async packId => {
+      const base = await settings.readStored()
+      if (base.activePackId) return
+      await settings.save({ ...base, activePackId: packId, profileName: packId })
+      // 「当前实例」换了人：重算并广播快照，界面上的启停按钮才跟着换。
+      await runtime.refreshSnapshots()
+    },
     registryPath: path.join(app.getPath('userData'), 'packs.json'),
     emitProgress: progress => {
       const window = deps.getWindow()

@@ -294,6 +294,33 @@ describe('导入整合包弹窗', () => {
     expect(importButton(node)?.disabled).toBe(true)
   })
 
+  it('导入完成后列表里已有这个包：不再冒出「已经导入过了 / 同名实例」的黄字', async () => {
+    // 缺陷 2 的现场顺序：导入成功 → onImported 刷新列表，新包的 id 与实例名都进了 packs。
+    // 校验若还按「当前列表」每帧重算，就会在「已完成」旁边同时判定撞名。
+    const node = await render({ picked: PACK_ZIP }, { packs: [pack('pack-a')] })
+    await pickZip(node)
+    await act(async () => { importButton(node)?.click() })
+    expect(node.textContent ?? '').toContain('已完成')
+
+    // 外层刷新后的列表：新包已经在了（这正是让旧实现误判的那次重渲染）。
+    const { root } = containers[containers.length - 1]!
+    await act(async () => {
+      root.render(
+        <PackImportDialog
+          packs={[pack('pack-a'), pack('pack-dsh-origin-3080', { name: PACK_NAME })]}
+          onClose={() => undefined}
+        />,
+      )
+    })
+
+    const text = node.textContent ?? ''
+    expect(text).toContain('已完成')
+    // 两句即时校验在 done 阶段一律不出现。
+    expect(text).not.toContain('这个文件夹已经导入过了')
+    expect(text).not.toContain('已经有同名实例了')
+    expect(node.querySelector('.import-hint')).toBeNull()
+  })
+
   it('阶段事件驱动状态行：装配中显示阶段，装完显示「已完成」', async () => {
     let finish: (value: PackImportOutcome) => void = () => undefined
     const pending = new Promise<PackImportOutcome>(resolve => { finish = resolve })

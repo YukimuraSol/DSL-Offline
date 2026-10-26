@@ -70,10 +70,14 @@ export function PackImportDialog(props: PackImportDialogProps) {
   // 两条即时检查：文件夹名派不出好标识 / 已经导入过；实例名空、太长、撞名。
   // 真正的判定都在主进程（那边拼磁盘目录名、写 packs.json），这里只是让按钮别指向一个必然失败的动作。
   // 文件夹名可编辑：填什么就传什么（PackImportRequest.folderName），主进程按同一口径复核后才落盘。
-  const folderIssue = packDir
+  // 缺陷 2：校验只在「还没开始导入」时算。导入成功后外层会把新包刷进 packs（id 与实例名都在里面），
+  // 若继续按当前列表重算，就会在「已完成」旁边同时冒出「这个文件夹已经导入过了」/「已经有同名实例了」。
+  // running / done / stopped 阶段一律不显示这两句。
+  const idle = phase === 'idle'
+  const folderIssue = idle && packDir
     ? (folderName ? folderNameIssue(folderName, packs.map(pack => pack.id)) : '先给新实例填个文件夹名。')
     : null
-  const nameIssue = packDir ? instanceNameIssue(instanceName, packs.map(pack => pack.name)) : null
+  const nameIssue = idle && packDir ? instanceNameIssue(instanceName, packs.map(pack => pack.name)) : null
   const issue = folderIssue ?? nameIssue
   const canImport = packDir !== '' && issue === null
 

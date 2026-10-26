@@ -938,6 +938,15 @@ export function useLauncherStore() {
     }
   }, [api])
 
+  /**
+   * 重读一份 settings（主进程改了指针但没有把整份 settings 回给渲染层时用）。
+   * 缺陷 3：导入整合包成功后主进程可能已经把 activePackId 指向新包，这里不重读的话，
+   * 首页整个会话都还显示「还没有整合包」。只读，不发任何写请求，也不弹 toast。
+   */
+  const reloadSettings = useCallback(async () => {
+    setSettings(await api.getSettings())
+  }, [api])
+
   /** 包级写操作返回单个 PackStatus，原地替换列表项，避免整表刷新闪烁。 */
   const applyPackUpdate = useCallback((next: PackStatus) => {
     setPacks(current => current.map(pack => pack.id === next.id ? next : pack))
@@ -1419,6 +1428,7 @@ export function useLauncherStore() {
     switchProfile,
     deleteProfile,
     refreshPackSnapshots,
+    reloadSettings,
     activatePack,
     packActivity,
     packDownload,

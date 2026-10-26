@@ -58,7 +58,7 @@ import { adoptLegacyPackHomes } from './pack-home-migration'
 import { createRuntimeController } from './runtime'
 import { createRuntimeVersionService, ensureDshVersionInstalled, findManagedDshVersions, type RuntimeVersionService } from './runtime-versions'
 import { seedBundledKernels } from './kernel-seed'
-import { createSettingsStore, defaultSettings, defaultLauncherPacksRoot, isSameOrInsidePath, packsRootHasPacks, packsRootInsideInstall, decidePacksRootMigration, type SettingsStore } from './settings'
+import { createSettingsStore, defaultSettings, defaultLauncherPacksRoot, isSameOrInsidePath, packsRootHasPacks, packsRootInsideInstall, decidePacksRootMigration, readStoredDshInstallPath, type SettingsStore } from './settings'
 import { isLauncherOwnedHome, type HomeScope } from './home-scope'
 import { createTray, type TrayController } from './tray'
 import { recoverLegacyCredentials } from './dsh-credentials-compat'
@@ -124,6 +124,12 @@ const bundledKernelsRoot = app.isPackaged
   : path.resolve(moduleDirectory, '../runtime/kernels')
 
 let mainWindow: BrowserWindow | null = null
+/**
+ * 启动期窗口闸门：随包内核还没释放完（首启几百 MB 要拷几分钟）不许建窗口。
+ * 界面一 mount 就会探测 DSH，而那一刻 <内核目录>\versions\<ver>\node_modules\.bin\dsh.cmd
+ * 还没落地，只能探到 PATH 上的系统 dsh；这份结果整个会话不会再刷新。
+ */
+let uiReady = false
 let processSupervisor: ProcessSupervisor | null = null
 let quitCleanupStarted = false
 let allowFinalQuit = false
@@ -1330,6 +1336,8 @@ function createServices(initialPacksRoot: string): Services {
 }
 
 function openMainWindow(): void {
+  // 启动期不开窗：见 uiReady 的注释（第二实例/托盘在启动途中也可能走到这里）。
+  if (!uiReady) return
   // 已有存活的主窗口就聚焦它，绝不再建第二个：旧台式实测出现过两个一模一样的
   // app 页 target（内容一致、互相抢焦点），从这里加一道最便宜的防御。
   const existing = getWindow()
@@ -1563,6 +1571,30 @@ if (workbenchStart < 0 && commandStart < 0 && exportPackStart < 0) app.whenReady
   } catch (error) {
     console.error('[process-supervisor] 启动失败，退出时只能执行普通清理。', error)
   }
+  // 随包内核释放：必须早于一切「读 DSH 版本」的动作 —— 包括下面建服务时对 settings 的第一次读。
+  // 首启要把几百 MB 拷进内核目录（yzk 实测 13:55:09 → 14:02:03），这段时间里 findInstalledDsh
+  // 只看得到 PATH 上的系统 dsh；只要先读过一次设置，那次探测就会被 adoptDetectedDsh 采纳并
+  // 写进 settings.json（launchExecutable 钉死在系统 dsh 上），而 usesOnDemandDsh 之后不再成立，
+  // 再没有任何地方会把它收回到自带内核。目标已完整就不动；不完整（上次首启被中断留下半截）
+  // 则整棵重拷，让它自愈。失败只记日志，不挡启动。
+  try {
+    const earlyUserData = app.getPath('userData')
+    const seeded = await seedBundledKernels({
+      kernelsRoot: bundledKernelsRoot,
+      dshInstallPath: await readStoredDshInstallPath(path.join(earlyUserData, 'settings.json'), path.join(earlyUserData, 'dsh-runtime')),
+      homeScope: {
+        userData: earlyUserData,
+        packsRoot: await startupPacksRoot(earlyUserData),
+        managedDshRoot: path.join(earlyUserData, 'dsh-runtime'),
+      },
+    })
+    if (seeded.seeded.length > 0) {
+      const done = seeded.seeded.filter(item => item.state === 'seeded').map(item => item.version)
+      if (done.length > 0) console.log(`[kernel] 已释放随包内核：${done.join(', ')}`)
+    }
+  } catch (error) {
+    console.error('[kernel] 释放随包内核失败。', error)
+  }
   // 一次性迁移：装到别的盘、settings.json 里还写死旧默认位置的老用户，先把 packsRoot 改到新位置，
   // 再让 startupPacksRoot 读到迁移后的值。失败只记日志，继续用旧值，不挡启动。
   await migrateStoredPacksRoot(app.getPath('userData'))
@@ -1577,27 +1609,9 @@ if (workbenchStart < 0 && commandStart < 0 && exportPackStart < 0) app.whenReady
     setWindowMode: (mode: WindowMode) => applyWindowMode(mainWindow, mode),
     answerPortConflict,
   })
-  // 随包内核释放：必须早于一切「读 DSH 版本/启动实例」的动作，否则首启还会去下载。
-  // 目标已完整就不动；不完整（上次首启被中断留下半截）则整棵重拷，让它自愈。
-  // 失败只记日志，不挡启动。
-  try {
-    const seeded = await seedBundledKernels({
-      kernelsRoot: bundledKernelsRoot,
-      dshInstallPath: (await services.settings.read()).dshInstallPath,
-      homeScope: {
-        userData: app.getPath('userData'),
-        packsRoot: await startupPacksRoot(app.getPath('userData')),
-        managedDshRoot: path.join(app.getPath('userData'), 'dsh-runtime'),
-      },
-    })
-    if (seeded.seeded.length > 0) {
-      const done = seeded.seeded.filter(item => item.state === 'seeded').map(item => item.version)
-      if (done.length > 0) console.log(`[kernel] 已释放随包内核：${done.join(', ')}`)
-    }
-  } catch (error) {
-    console.error('[kernel] 释放随包内核失败。', error)
-  }
   await services.profilePoolReady
+  // 到这里内核、IPC、插件池都就位了，才允许建窗（见 uiReady）。
+  uiReady = true
   openMainWindow()
   // 首启不下载也不导入任何官方整合包：全新安装的实例列表必须是 0 条。
   tray = createTray({ iconPath: launcherIconPath, showMainWindow })

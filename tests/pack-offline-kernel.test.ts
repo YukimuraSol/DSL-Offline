@@ -16,7 +16,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { kernelIsComplete } from '../electron/kernel-seed'
 import { createOfflineManifest, integrityOf, packKernelTgz, writeOfflineManifest, type OfflineManifestKernel } from '../electron/pack-offline-export'
-import { createOfflinePackImport } from '../electron/pack-offline-import-ipc'
+import { createOfflinePackImport, ensureJunction, type JunctionLinkIo } from '../electron/pack-offline-import-ipc'
 import { readPackRegistry } from '../electron/pack-registry'
 import { defaultSettings } from '../electron/settings'
 import { writeTarGz, type TarEntry } from '../electron/tar-archive'
@@ -163,12 +163,19 @@ async function makeEnv(options: { preinstalledKernel?: boolean } = {}): Promise<
   return { root, packsRoot, registryPath: path.join(root, 'packs.json'), installRoot, settings }
 }
 
-function makeImporter(env: TestEnv, stages: string[] = [], logs: string[] = []) {
+function makeImporter(env: TestEnv, stages: string[] = [], logs: string[] = [], junctionIo?: Partial<JunctionLinkIo>) {
   return createOfflinePackImport({
     readSettings: async () => env.settings,
     registryPath: env.registryPath,
     emitProgress: progress => { stages.push(progress.stage) },
     log: message => { logs.push(message) },
+    // 与 ipc.ts 同一条契约的测试替身：把指针真的写到 env.settings 上（不在这里判「有没有激活包」，
+    // 那个判断在导入模块里；替身再判一次会把那边的 bug 掩掉）。
+    activatePack: async packId => {
+      env.settings.activePackId = packId
+      env.settings.profileName = packId
+    },
+    ...(junctionIo ? { junctionIo } : {}),
   })
 }
 
@@ -330,3 +337,106 @@ describe('导入端：包里自带内核', () => {
     expect(await readdir(env.packsRoot).catch(() => [] as string[])).toEqual([])
   })
 })
+// ===========================================================================
+// 缺陷 1：junction 必须先铺内容、后建链接，建完立刻穿透校验
+// ===========================================================================
+
+describe('导入端：junction 建完穿透校验（缺陷 1）', () => {
+  it('目标已经落盘时建 junction：立刻能穿透读到目标里的 package.json', async context => {
+    // 契约：链接不是「重解析点结构对」就算好，必须**从链接读得到东西**。
+    // 真机现场是相反顺序（先建链接、后铺内容）留下的坏链接：结构完全正常，18 条穿透读全失败
+    // （ERROR_CANT_RESOLVE_FILENAME），而同位置新建一条立刻能读。
+    const root = await temporaryRoot('dsh-junction-')
+    const target = path.join(root, 'plugin-bodies', 'dsh-test-plugin')
+    const link = path.join(root, 'profiles', 'pack-x', 'node_modules', 'dsh-test-plugin')
+    await writeJson(path.join(target, 'package.json'), { name: 'dsh-test-plugin', version: '1.0.0' })
+    await writeFile(path.join(target, 'index.js'), 'export default {}\n', 'utf8')
+
+    let outcome: { ok: boolean; rebuilt: boolean }
+    try {
+      outcome = await ensureJunction({ targetPath: target, linkPath: link })
+    } catch {
+      // junction 只支持本地 NTFS；没有建链接权限的机器跳过并说明，不假装通过。
+      context.skip()
+      return
+    }
+    expect(outcome.ok).toBe(true)
+    // 穿透校验：从链接读到的必须是本体里的东西。
+    expect(JSON.parse(await readFile(path.join(link, 'package.json'), 'utf8')).name).toBe('dsh-test-plugin')
+    expect(await readdir(link)).toContain('index.js')
+    // 链接本身确实是重解析点，不是被悄悄拷成真实目录。
+    expect((await lstat(link)).isSymbolicLink()).toBe(true)
+  })
+
+  it('建完校验失败：删掉重建一次；第二次仍不通返回失败，不抛错也不连坐导入', async () => {
+    let creates = 0
+    let removes = 0
+    const outcome = await ensureJunction({
+      targetPath: 'D:\\fake-target',
+      linkPath: 'D:\\fake-link',
+      io: {
+        readable: async () => false,
+        remove: async () => { removes += 1 },
+        create: async () => { creates += 1 },
+      },
+    })
+    expect(outcome).toEqual({ ok: false, rebuilt: true })
+    expect([removes, creates]).toEqual([1, 1])
+
+    // 第一次就读得通：一次都不重建（不要为了「保险」每次都删一遍链接）。
+    creates = 0
+    removes = 0
+    const healthy = await ensureJunction({
+      targetPath: 'x',
+      linkPath: 'y',
+      io: { readable: async () => true, remove: async () => { removes += 1 }, create: async () => { creates += 1 } },
+    })
+    expect(healthy).toEqual({ ok: true, rebuilt: false })
+    expect([removes, creates]).toEqual([0, 0])
+  })
+
+  it('链接重建一次仍读不通：记日志并写进 import-report.json，导入照样完成', async () => {
+    const env = await makeEnv({ preinstalledKernel: true })
+    const { packDir } = await makePack(env.root)
+    const logs: string[] = []
+    // 真机现场注入：链接建得出来、结构正常，但穿透读一律失败。整条链路必须走完，只留 warning。
+    const outcome = await makeImporter(env, [], logs, { readable: async () => false })
+      .start({ packDir, name: '读不通' })
+
+    expect(outcome.ok).toBe(true)
+    expect(logs.some(line => line.includes('穿透读不通'))).toBe(true)
+    const reportPath = path.join(homeOf(env), 'profiles', 'pack-' + PACK_FOLDER, 'import-report.json')
+    const report = JSON.parse(await readFile(reportPath, 'utf8')) as { warnings: string[] }
+    // 必须是**这条插件**的链接留了痕：内核链接的警告不能顺手替它通过。
+    expect(report.warnings.some(line => line.includes('dsh-test-plugin') && line.includes('穿透读不通'))).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 缺陷 3：导入成功后首页要能选中新包（只在本机还没有激活包时切指针）
+// ===========================================================================
+
+describe('导入端：导入成功后自动选中新包（缺陷 3）', () => {
+  it('原本没有激活包 → activePackId 指向新包；原本已有激活包 → 保持不变', async () => {
+    // 场景 A：全新机器（还没有任何激活包）——导入完首页必须是这个包，而不是空状态。
+    const fresh = await makeEnv({ preinstalledKernel: true })
+    const freshPack = await makePack(fresh.root)
+    fresh.settings.activePackId = null
+    fresh.settings.profileName = 'web'
+    const first = await makeImporter(fresh).start({ packDir: freshPack.packDir, name: '第一个包' })
+    expect(first.ok).toBe(true)
+    expect(fresh.settings.activePackId).toBe('pack-' + PACK_FOLDER)
+    expect(fresh.settings.profileName).toBe('pack-' + PACK_FOLDER)
+
+    // 场景 B：机器上已有激活包——新导入绝不能被顶掉。
+    const occupied = await makeEnv({ preinstalledKernel: true })
+    const occupiedPack = await makePack(occupied.root)
+    occupied.settings.activePackId = 'pack-somebody-else'
+    occupied.settings.profileName = 'pack-somebody-else'
+    const second = await makeImporter(occupied).start({ packDir: occupiedPack.packDir, name: '第二个包' })
+    expect(second.ok).toBe(true)
+    expect(occupied.settings.activePackId).toBe('pack-somebody-else')
+    expect(occupied.settings.profileName).toBe('pack-somebody-else')
+  })
+})
+

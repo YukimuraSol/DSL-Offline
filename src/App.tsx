@@ -14,6 +14,7 @@ import { useNavigation } from './hooks/use-navigation'
 import { usePackInstall } from './hooks/use-pack-install'
 import { errorText } from './lib/format'
 import { isInstallProgressActive } from './lib/install-progress'
+import { effectiveKernelOf } from './lib/kernel-status'
 import { HOME_TAB_ORDER } from './lib/nav'
 import type { PackVerifyInput } from './components/dialogs/PackVerifyDialog'
 import type { HomeTab, PackStatus } from './types'
@@ -180,24 +181,17 @@ function LauncherShell() {
     ?? store.packs.find(item => item.name === settings.profileName)
     ?? null
   /**
-   * 内核状态条要显示**真正会跑的那份内核**：整合包自带内核优先（实例快照已按
-   * 「包内 profiles/node_modules → 版本库 → 启动器」算好），没有整合包/包里没带才回落
+   * 内核状态条要显示**真正会跑的那份内核**：激活包自带内核优先（实例快照已按
+   * 「包内 profiles/node_modules → 版本库 → 启动器」算好），没有激活包/包里没带才回落
    * 启动器安装的那份。都取不到就是 null，界面如实写「版本未知」——
    * 不能用 settings.dshVersion 冒充实际跑的内核（旧台式就报成了两个版本）。
+   * 缺陷 4：没有激活包时**不许**从实例快照反推 pack（历史快照会造出「还没有整合包 · 随整合包」）。
    */
-  const effectiveKernel = (() => {
-    const snapshot = activePack
-      ? store.instances.find(item => item.packId === activePack.id)
-      : store.instances.find(item => item.kernelVersion) ?? store.instances[0]
-    if (snapshot?.kernelVersion) return { version: snapshot.kernelVersion, origin: 'pack' as const }
-    if (store.dshInstallation.installed && store.dshInstallation.version) {
-      return {
-        version: store.dshInstallation.version,
-        origin: store.dshInstallation.source === 'system' ? 'system' as const : 'launcher' as const,
-      }
-    }
-    return { version: null, origin: null }
-  })()
+  const effectiveKernel = effectiveKernelOf({
+    activePackId: activePack?.id ?? null,
+    instances: store.instances,
+    dshInstallation: store.dshInstallation,
+  })
   visitedTabs.current.add(navigation.homeTab)
 
   return (
@@ -322,6 +316,9 @@ function LauncherShell() {
               // 新实例要立刻出现在列表里（主进程已经把记录写进 packs.json 了）。
               void store.refreshPacks()
               void store.refreshPackSnapshots()
+              // 缺陷 3：原本没有激活包时主进程已把「当前整合包」指向新包；不重读 settings，
+              // 首页仍停在「还没有整合包」。这里只读，不会把用户正在用的包顶掉。
+              void store.reloadSettings()
             }}
             onClose={() => setImportOpen(false)}
           />
