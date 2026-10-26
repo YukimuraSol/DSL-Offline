@@ -1,0 +1,262 @@
+import net from 'node:net'
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import path from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
+import { createRuntimeController } from '../electron/runtime'
+import { isLegacyCredentialsFormatError } from '../electron/dsh-credentials-compat'
+import type { NodeRuntime } from '../electron/node-runtime'
+import type { AppSettings, LaunchFailureStage } from '../src/types'
+import {
+  LAUNCH_STAGE_LABELS,
+  LAUNCH_STAGE_TITLES,
+  launchFailureHeadline,
+} from '../src/lib/launch-failure'
+
+/**
+ * 启动失败必须带上"死在哪一步"。
+ *
+ * 此前只有"进程起来了又退出"和"子进程 error"两类会记 lastFailure，
+ * 而端口探测失败、spawn 同步抛错这两类只 throw——渲染层拿到的是一条裸 toast，
+ * 既没有完整诊断，也没有那份能直接粘给 agent 的修复提示词。
+ */
+
+function controllerSettings(): AppSettings {
+  return {
+    dshInstallPath: path.join(process.cwd(), 'dsh-runtime'),
+    dshHome: path.join(process.cwd(), '.dsh'),
+    profileName: 'pack-demo',
+    workspace: process.cwd(),
+    launchExecutable: 'dsh.cmd',
+    launchArgs: ['web'],
+    // 挑一个高位端口，避免和真实服务撞；启动器自己会往上找可用端口。
+    webPort: 39_817,
+    openAfterLaunch: true,
+  }
+}
+
+function managedNode(): NodeRuntime {
+  const root = path.join(process.cwd(), 'managed-node')
+  return {
+    root,
+    node: path.join(root, process.platform === 'win32' ? 'node.exe' : 'node'),
+    npm: path.join(root, process.platform === 'win32' ? 'npm.cmd' : 'npm'),
+    npx: path.join(root, process.platform === 'win32' ? 'npx.cmd' : 'npx'),
+    managed: true,
+  }
+}
+
+function fakeChild(pid: number) {
+  const child = new EventEmitter() as ChildProcessWithoutNullStreams & { kill: ReturnType<typeof vi.fn> }
+  Object.assign(child, {
+    pid,
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(() => true),
+  })
+  return child
+}
+
+function makeController(spawnProcess: (file: string, args: string[]) => ChildProcessWithoutNullStreams, settings = controllerSettings(), extra: Partial<Parameters<typeof createRuntimeController>[0]> = {}) {
+  const states: unknown[] = []
+  return {
+    states,
+    runtime: createRuntimeController({
+      readSettings: async () => settings,
+      prepareNodeRuntime: async () => managedNode(),
+      fallbackWorkspace: () => process.cwd(),
+      emitOutput: () => {},
+      emitState: state => { states.push(state) },
+      openExternal: () => {},
+      spawnProcess: spawnProcess as never,
+      ...extra,
+    }),
+  }
+}
+
+describe('启动失败的阶段标记', () => {
+  it('spawn 同步抛错也记失败，并且带阶段与原因', async () => {
+    const error = new Error('spawn dsh.cmd EACCES')
+    const { runtime } = makeController(() => { throw error })
+
+    await expect(runtime.start()).rejects.toThrow(/EACCES/)
+
+    const failure = runtime.failure()
+    expect(failure?.stage).toBe('spawn')
+    expect(failure?.diagnostics).toContain('失败阶段：拉起 DSH 进程')
+    expect(failure?.diagnostics).toContain('原因：spawn dsh.cmd EACCES')
+    expect(failure?.diagnostics).toContain('启动命令：')
+    expect(failure?.profileName).toBe('pack-demo')
+  })
+
+  it('子进程 error 事件记为 spawn 阶段', async () => {
+    const child = fakeChild(4210)
+    const { runtime } = makeController(() => child)
+
+    await runtime.start()
+    expect(runtime.failure()).toBeNull()
+
+    child.emit('error', new Error('ENOENT exec'))
+    const failure = runtime.failure()
+    expect(failure?.stage).toBe('spawn')
+    expect(failure?.diagnostics).toContain('原因：ENOENT exec')
+    await runtime.stop()
+  })
+
+  it('非零退出记为 exited 阶段，诊断里保留退出代码与 stderr', async () => {
+    const child = fakeChild(4211)
+    const { runtime } = makeController(() => child)
+
+    await runtime.start()
+    // 必须在 start 之后再写：stderr 的 data 监听器是启动时才挂上的，提前写会丢。
+    ;(child.stderr as unknown as PassThrough).write('boom: 无法解析配置\n')
+    child.emit('exit', 3)
+
+    // 退出处理里有异步收尾（凭据恢复等），轮询而不是睡固定时长。
+    let failure = runtime.failure()
+    for (let attempt = 0; !failure && attempt < 60; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      failure = runtime.failure()
+    }
+    expect(failure?.stage).toBe('exited')
+    expect(failure?.diagnostics).toContain('失败阶段：运行中退出')
+    expect(failure?.diagnostics).toContain('退出代码：3')
+    expect(failure?.diagnostics).toContain('boom: 无法解析配置')
+  })
+
+  it('端口被占用、用户不肯结束占用进程时记失败，并带上占用者（不再静默换端口）', async () => {
+    const base = 42_817
+    const server = await new Promise<net.Server>((resolve, reject) => {
+      const listener = net.createServer()
+      listener.once('error', reject)
+      listener.listen(base, '127.0.0.1', () => resolve(listener))
+    })
+
+    try {
+      const settings = { ...controllerSettings(), webPort: base }
+      const { runtime } = makeController(() => fakeChild(4212), settings, {
+        portOwners: async () => [{ pid: 9911, name: 'node.exe', path: 'C:\\Program Files\\nodejs\\node.exe' }],
+        // 不注入 resolvePortConflict：等于用户没答 / 答了「取消启动」。
+      })
+      await expect(runtime.start()).rejects.toThrow(/已取消：端口 42817 仍被占用。/)
+
+      const failure = runtime.failure()
+      expect(failure?.stage).toBe('port')
+      expect(failure?.diagnostics).toContain('失败阶段：准备本地端口')
+      expect(failure?.diagnostics).toContain('占用者：PID 9911 node.exe')
+      expect(failure?.diagnostics).toContain('期望端口：42817')
+      // 关键：绝不自动往上找端口。旧实现这里会换到 42818 并启动成功。
+      expect(failure?.diagnostics).not.toContain('均不可用')
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  }, 30_000)
+
+  it('结束占用进程后端口仍绑不上，也要记失败并说明为什么', async () => {
+    const base = 42_818
+    const server = await new Promise<net.Server>((resolve, reject) => {
+      const listener = net.createServer()
+      listener.once('error', reject)
+      listener.listen(base, '127.0.0.1', () => resolve(listener))
+    })
+
+    try {
+      const settings = { ...controllerSettings(), webPort: base }
+      const { runtime } = makeController(() => fakeChild(4212), settings, {
+        portOwners: async () => [{ pid: 9911, name: 'node.exe', path: null }],
+        resolvePortConflict: async () => true,
+        // 假装 taskkill 成功了，但端口其实还被别的东西占着（权限更高的进程 / TIME_WAIT）。
+        releasePort: async () => ({ killed: [9911], failed: [] }),
+      })
+      await expect(runtime.start()).rejects.toThrow(/已结束占用进程，但端口 42818 仍无法绑定。/)
+
+      const failure = runtime.failure()
+      expect(failure?.stage).toBe('port')
+      expect(failure?.diagnostics).toContain('已结束占用进程，但端口 42818 仍无法绑定。')
+      expect(failure?.diagnostics).toContain('常见原因：')
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  }, 30_000)
+
+  it('每个阶段都有可读标签和弹窗标题（漏一个编译期就拦不住）', () => {
+    const stages: LaunchFailureStage[] = ['port', 'spawn', 'exited']
+    for (const stage of stages) {
+      expect(LAUNCH_STAGE_LABELS[stage]).toBeTruthy()
+      expect(LAUNCH_STAGE_TITLES[stage]).toContain('DSH')
+    }
+  })
+
+  it('headline 跳过元信息行，挑出真正的原因句', () => {
+    const diagnostics = [
+      '失败阶段：准备本地端口',
+      '从端口 39817 开始连续检测 10 个端口，均不可用。',
+      '期望端口：39817（可在「设置 → Web 端口」改）',
+      '启动命令：dsh.cmd web',
+      '常见原因：上一个没退干净的 DSH 还占着端口。',
+    ].join('\n')
+    expect(launchFailureHeadline(diagnostics)).toBe('从端口 39817 开始连续检测 10 个端口，均不可用。')
+    expect(launchFailureHeadline('启动命令：dsh.cmd web\n工作目录：/tmp')).toBe('进程没有输出更多信息')
+  })
+})
+
+describe('launchFailureHeadline 认 DSH 的数据格式拒绝', () => {
+  const nested = (message: string): string => [
+    '失败阶段：运行中退出',
+    '启动命令：dsh.cmd --profile pack-a --no-open --port 3080',
+    '退出代码：1',
+    '',
+    `file:///.../dsh-app-boot/lib/index.js:240 ${message}`,
+    '    at async WorkspaceRegistry.listStoredHeaders',
+  ].join('\n')
+
+  it('新版 DSH 写过的记录被旧版拒绝时，给人话而不是英文堆栈', () => {
+    const headline = launchFailureHeadline(nested('session "a1" uses log format v4, but this harness reads only v3: the log was written by a newer harness — upgrade the harness to open it'))
+    expect(headline).toContain('数据格式只升不降')
+    expect(headline).not.toContain('log format v4')
+  })
+
+  it('压缩编码与旧扁平布局的拒绝同样认得', () => {
+    expect(launchFailureHeadline(nested('session artifact "..." uses .jsonl, but this backend is configured for compression "zstd"'))).toContain('读不动')
+    expect(launchFailureHeadline(nested('session artifact "..." uses the unsupported flat-file layout; use a separate root'))).toContain('读不动')
+  })
+
+  it('认不出的原因仍走原来的取行规则，不被强行解释', () => {
+    expect(launchFailureHeadline(nested('Error: listen EADDRINUSE 127.0.0.1:3080'))).toContain('EADDRINUSE')
+  })
+})
+
+describe('launchFailureHeadline 认 DSH 拒绝非法凭据引用名（issue #11）', () => {
+  const refused = (message: string): string => [
+    '失败阶段：运行中退出',
+    '启动命令：dsh.cmd web --no-open --port 3080',
+    '退出代码：1',
+    '',
+    'dsh: startup failed: 1 required plugin did not activate',
+    `TypeError: ${message}`,
+    '    at LocalCredentialProvider.loadInitial',
+  ].join('\n')
+
+  it('refs 布局下的非法名字给人话，且不把名字和值抄进摘要', () => {
+    const headline = launchFailureHeadline(refused('credential ref "1" must match /^[A-Za-z_][A-Za-z0-9_]*$/'))
+    expect(headline).toContain('名字不合法')
+    expect(headline).toContain('自动把名字改成合法写法')
+    expect(headline).not.toContain('must match')
+    expect(headline).not.toContain('did not activate')
+  })
+
+  it('平铺布局的拒绝同样认得（上游会先静默放弃迁移，所以签名不一样）', () => {
+    const headline = launchFailureHeadline(refused('credentials-local: /home/u/.dsh/.credentials.yaml uses the pre-release flat layout. Add `version: 1` and nest the existing 2 entries under `refs:`'))
+    expect(headline).toContain('平铺格式')
+    expect(headline).not.toContain('Add `version: 1`')
+  })
+
+  it('不与旧版凭据格式重试的识别串互相误命中', () => {
+    // 这条是「version 值不是字符串」，属于旧格式重试的触发条件，绝不该被当成非法引用名。
+    const legacyOnly = refused('the value for "version" in .credentials.yaml must be a string')
+    expect(launchFailureHeadline(legacyOnly)).not.toContain('名字不合法')
+    expect(isLegacyCredentialsFormatError(refused('credential ref "1" must match /^[A-Za-z_][A-Za-z0-9_]*$/'))).toBe(false)
+  })
+})

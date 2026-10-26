@@ -1,0 +1,1634 @@
+export type WindowMode = 'launcher' | 'manager'
+/** 一级导航 tab：离线整合包启动器只有两页。顺序与显示名见 src/lib/nav.ts。 */
+export type HomeTab = 'start' | 'packs'
+export type UiTheme = 'deepseek' | 'night'
+
+export interface AppSettings {
+  dshInstallPath: string
+  /** 默认 DSH 家目录（无私有目录的整合包共用）；激活带私有目录的整合包后，read() 返回的 dshHome 即该包目录。 */
+  dshHome: string
+  /** 当前选中的启动器托管 DSH 版本；null 表示沿用旧版自动检测。 */
+  dshVersion?: string | null
+  /** 当前选中的启动器托管 Node.js 版本；null 表示自动选择（本机达标优先，否则下载）。 */
+  nodeVersion?: string | null
+  profileName: string
+  /** 当前激活的整合包 id（真隔离环境的唯一指针）；与 profileName 同步切换。 */
+  activePackId?: string | null
+  /** 一次性迁移「整合包=私有家目录」是否已执行。 */
+  packsV2Migrated?: boolean
+  /**
+   * 整合包根目录（用户可在设置里改）。默认 %LOCALAPPDATA%\dsh-launcher\dsh-packs；
+   * pack.ts 只在启动时读一次，所以改完要重启启动器。改目录只换指向，不搬动已有整合包。
+   */
+  packsRoot?: string
+  workspace: string
+  launchExecutable: string
+  launchArgs: string[]
+  webPort: number
+  openAfterLaunch: boolean
+  /** 启动器界面配色；主表面由同一基色的明暗层级构成。 */
+  uiTheme?: UiTheme
+  /** DSH Copilot 是否允许用户替换基础 persona。 */
+  aiDeveloperMode?: boolean
+  /** DSH Copilot 的用户提示词覆盖/追加内容。 */
+  aiPrompt?: string
+  /** 网络镜像 / 代理偏好；留空即用启动器默认策略（npm 镜像优先、系统代理探测）。 */
+  network?: NetworkSettings
+  /** 是否已向用户问过「官方推荐整合包 DSH Web UI」的下载/启用（弹过一次后不再弹）。 */
+  recommendedWebUiPrompted?: boolean
+}
+
+export interface NetworkSettings {
+  /** npm 注册表镜像；留空默认 npmmirror。 */
+  npmRegistry?: string
+  /** HTTP/HTTPS 代理地址（如 http://127.0.0.1:7890）；留空自动探测系统代理。 */
+  proxy?: string
+  /** GitHub/raw 镜像前缀；留空不启用（预留，便于后续扩展）。 */
+  githubMirror?: string
+}
+
+/** 官方推荐整合包（DSH Web UI 全家桶）的安装/启用状态。 */
+export interface RecommendedWebUiStatus {
+  installed: boolean
+  enabled: boolean
+}
+
+export interface CredentialStatus {
+  configured: boolean
+  /** 凭据文件解析失败时的具体原因（不抛异常、状态降级为未配置）。 */
+  parseError?: string
+}
+
+export type CustomApiProtocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages'
+
+export interface CustomApiProvider {
+  route: string
+  displayName: string
+  baseUrl: string
+  protocol: CustomApiProtocol
+  modelIds: string[]
+  credentialName: string | null
+  hasApiKey: boolean
+}
+
+export interface CustomApiProviderInput {
+  originalRoute?: string
+  route: string
+  displayName: string
+  baseUrl: string
+  protocol: CustomApiProtocol
+  modelIds: string[]
+  /** 编辑时留空表示保留现有密钥；新建时留空表示该服务无需鉴权。 */
+  apiKey?: string
+}
+
+export interface GitHubRateLimit {
+  limit: number
+  remaining: number
+  resetAt: string | null
+}
+
+export interface GitHubAuthStatus {
+  authenticated: boolean
+  login: string | null
+  name: string | null
+  avatarUrl: string | null
+  scopes: string[]
+  method: 'oauth' | 'token' | null
+  oauthAvailable: boolean
+  rateLimit: GitHubRateLimit | null
+}
+
+export interface GitHubDeviceAuthorization {
+  userCode: string
+  verificationUri: string
+  expiresAt: string
+  intervalSeconds: number
+}
+
+export interface GitHubPullRequestSummary {
+  number: number
+  title: string
+  url: string
+  state: 'open' | 'closed'
+  draft: boolean
+  author: string
+  createdAt: string
+  updatedAt: string
+  mergedAt: string | null
+  headBranch: string
+  baseBranch: string
+}
+
+export interface ManagedPlugin {
+  packageName: string
+  displayName: string
+  version: string
+  description: string
+  repository?: string
+  repositoryFullName?: string
+  enabled: boolean
+  builtin: boolean
+  locked: boolean
+  compatible: boolean
+  order: number | null
+}
+
+export interface ProfileState {
+  initialized: boolean
+  profileDir: string
+  manifestPath: string
+  plugins: ManagedPlugin[]
+  activeBundles: string[]
+  dependencyCount: number
+  disabledCount: number
+}
+
+export type CatalogCandidateType = 'plugin' | 'skill' | 'application'
+export type CatalogComponentKind = 'plugin' | 'skill' | 'application' | 'preset'
+export type CatalogKind = CatalogComponentKind | 'hybrid' | 'dsh' | 'invalid'
+
+export interface CatalogRepositoryResult {
+  id: number
+  fullName: string
+  name: string
+  owner: string
+  description: string
+  url: string
+  stars: number
+  /** GitHub Search API reports repository size in kilobytes. */
+  sizeKb?: number
+  language: string | null
+  updatedAt: string
+  topics: string[]
+  defaultBranch: string
+  kind: 'repository' | 'dsh'
+  candidateTypes: CatalogCandidateType[]
+  /** 市场内置（featured）条目，列表顶部固定展示。 */
+  featured?: boolean
+}
+
+export type PluginInstallability = 'ready' | 'choice' | 'dynamic' | 'application' | 'invalid'
+
+export type PluginInstallSource = 'npm' | 'github' | 'archive-subdirectory' | 'local-directory' | 'release'
+
+export interface PluginInstallTarget {
+  id: string
+  packageName: string
+  version: string | null
+  source: PluginInstallSource
+  profileName: string
+  platform: 'web' | 'terminal' | 'unknown'
+  subdirectory: string | null
+  commit: string
+  requiresBuild: boolean
+  buildScripts: string[]
+  nodeRange: string | null
+  /** `local-directory` 源专用：本地插件本体所在目录（已存在的绝对路径）。 */
+  localDirectory?: string
+  /** `release` 源专用：GitHub Release tgz 资产直链（meta-repo 分析时解析，安装时透传请求）。 */
+  tarballUrl?: string
+  /** 聚合仓库（meta-repo）子模块来源：安装请求应指向该仓库，而非父 meta-repo。 */
+  sourceRepository?: string
+}
+
+export interface RepositoryAnalysis {
+  repository: string
+  defaultBranch: string
+  installability: PluginInstallability
+  summary: string
+  targets: PluginInstallTarget[]
+  /** 最新稳定 GitHub Release 中可直接下载的可执行资产。 */
+  releaseAnalysis?: ReleaseAnalysis | null
+}
+
+export type ReleaseExecutablePlatform = 'windows' | 'macos' | 'linux' | 'cross-platform' | 'unknown'
+export type ReleaseExecutableKind =
+  | 'exe'
+  | 'msi'
+  | 'dmg'
+  | 'pkg'
+  | 'appimage'
+  | 'deb'
+  | 'rpm'
+  | 'binary'
+  | 'script'
+  | 'jar'
+  | 'archive'
+
+export interface ReleaseExecutableAsset {
+  name: string
+  url: string
+  size: number | null
+  contentType: string | null
+  platform: ReleaseExecutablePlatform
+  kind: ReleaseExecutableKind
+  releaseTag: string
+  releaseName: string | null
+  publishedAt: string | null
+}
+
+export interface ReleaseAnalysis {
+  state: 'found' | 'none' | 'unavailable'
+  releaseTag: string | null
+  releaseName: string | null
+  publishedAt: string | null
+  assets: ReleaseExecutableAsset[]
+}
+
+export interface PluginInstallRequest {
+  repository: string
+  defaultBranch: string
+  targetId: string
+  profileName?: string // 安装到指定 profile
+  /** release 源插件：meta-repo 分析得到的 tgz 直链，安装时覆盖重分析得到的 github 源。 */
+  tarballUrl?: string
+}
+
+/**
+ * 手动添加插件：市场目录打不开时，用户直接给一个 npm 包名（可带 @version）。
+ * 走的是 `dsh plugin add <name>`，不碰 GitHub 分析、也不碰精选目录。
+ */
+export interface NpmPluginInstallRequest {
+  packageName: string
+  version?: string
+  /** 可选的 owner/repo，只用于「已安装」列表里显示来源链接。 */
+  repository?: string
+}
+
+export interface DshInstallationStatus {
+  installed: boolean
+  version: string | null
+  executable: string | null
+  source: 'launcher' | 'system' | null
+}
+
+/** 占着 Web 端口的进程。取不到名字时是 '<未知>'，不代表没被占用。 */
+export interface PortOwner {
+  pid: number
+  name: string
+  path: string | null
+  /** 从命令行 --profile 推出来的「疑似所属整合包」；查不到就是 undefined。 */
+  packName?: string | null
+}
+
+/** 端口冲突弹窗的数据：问用户「要不要结束这些进程后重试」。 */
+export interface PortConflictPrompt {
+  port: number
+  owners: PortOwner[]
+  /** 哪个包要占这个端口（并发时弹窗按包回答）。 */
+  packId?: string | null
+}
+
+/**
+ * 一个整合包实例的实时快照：并发运行时界面按包显示端口、内核与启停状态。
+ * 端口 / 内核 / 家目录都取自该包自己的目录，所以两个包跑不同内核版本是可能的。
+ */
+export interface InstanceSnapshot {
+  packId: string
+  name: string
+  homePath: string
+  profileName: string
+  webPort: number | null
+  /** 实际用来启动的内核可执行文件（包内 .bin 或启动器全局那份）。 */
+  kernelPath: string
+  kernelVersion: string | null
+  /** pack = 用包自带内核，launcher = 回落启动器安装的版本。 */
+  kernelSource: 'pack' | 'launcher'
+  /** 该实例独立的 bili 状态根目录（BILI_SESSIONS_DIR 的上一级）。 */
+  biliRoot: string
+  running: boolean
+  pid: number | null
+  url: string | null
+  startedAt: string | null
+}
+
+export interface DshUpdateStatus {
+  state: 'not-installed' | 'up-to-date' | 'update-available' | 'error'
+  localVersion: string | null
+  remoteVersion: string | null
+  repository: string
+  checkedAt: string
+  message: string
+}
+
+/** 整合包是本地运行环境与可分享单位的唯一实体。 */
+export interface ProfileSourceMetadata {
+  kind: 'local' | 'github' | 'import'
+  path?: string
+  repository?: string
+  branch?: string
+  commit?: string
+  format?: 'zip' | 'yaml' | 'github'
+  reference?: string
+}
+
+export interface ProfileSummary {
+  id: string
+  name: string
+  description: string
+  dshVersion: string | null
+  source: ProfileSourceMetadata | null
+  createdAt: string
+  updatedAt: string
+  exportedAt?: string | null
+  profileDir: string
+  initialized: boolean
+  pluginCount: number
+  enabledPluginCount: number
+  disabledPluginCount: number
+  missingDependencies: string[]
+  hasNodeModules: boolean
+  selected: boolean
+}
+
+export interface ProfileCreateRequest {
+  name: string
+  description?: string
+  dshVersion?: string | null
+  cloneFrom?: string
+}
+
+export type ProfileExportMode = 'light' | 'full' | 'repository'
+export interface ProfileExportOptions {
+  repositoryPrivate?: boolean
+}
+
+export interface RuntimeVersionCandidate {
+  version: string
+  label: string | null
+  lts: string | boolean | null
+  date: string | null
+  prerelease: boolean
+  /** 版本号最高者（列表里真正最新的那个，可能是不稳定的渠道）。 */
+  isNewest?: boolean
+  /** 启动器推荐下载/更新的版本（稳定优先、同级取新）。 */
+  recommended?: boolean
+}
+
+export interface DshVersionInfo {
+  version: string
+  root: string
+  executable: string
+  source: 'launcher' | 'legacy' | 'system'
+  selected: boolean
+  removable: boolean
+}
+
+export interface NodeVersionInfo {
+  version: string
+  root: string
+  executable: string
+  source: 'launcher' | 'legacy' | 'system'
+  selected: boolean
+  removable: boolean
+}
+
+export interface RuntimeEnvironmentState {
+  dshRoot: string
+  nodeRoot: string
+  dshSelectedVersion: string | null
+  nodeSelectedVersion: string | null
+  dshInstalled: DshVersionInfo[]
+  nodeInstalled: NodeVersionInfo[]
+  dshAvailable: RuntimeVersionCandidate[]
+}
+
+export interface LauncherUpdateStatus {
+  state: 'up-to-date' | 'update-available' | 'downloading' | 'downloaded' | 'applying' | 'error'
+  localVersion: string | null
+  remoteVersion: string | null
+  releaseUrl: string | null
+  /** Release 正文（自动生成的更新说明），详情弹窗展示；旧缓存可能缺省。 */
+  releaseNotes?: string | null
+  assetName: string | null
+  assetSize: number | null
+  checkedAt: string | null
+  message: string
+}
+
+export interface LauncherUpdateProgress {
+  phase: 'downloading' | 'applying'
+  percent: number
+  downloadedBytes?: number
+  totalBytes?: number
+}
+
+export interface SkillInstallTarget {
+  id: string
+  name: string
+  description: string
+  sourcePath: string
+  format: 'bundle' | 'flat'
+  revision: string
+  modelInvocable: boolean
+  userInvocable: boolean
+  /** 聚合仓库（meta-repo）子模块来源：安装请求应指向该仓库，而非父 meta-repo。 */
+  sourceRepository?: string
+}
+
+export interface SkillRepositoryAnalysis {
+  repository: string
+  defaultBranch: string
+  installability: 'ready' | 'choice' | 'invalid'
+  summary: string
+  targets: SkillInstallTarget[]
+}
+
+/** 日报当日页里解析出的一条要闻（真实原文链接）。 */
+export interface NewsHeadline {
+  text: string
+  link: string
+}
+
+/** 日报当日页「概览」下的一个栏目（要闻/模型发布/开发生态…）与其速览条目。 */
+export interface NewsSection {
+  title: string
+  items: NewsHeadline[]
+}
+
+export interface NewsItem {
+  title: string
+  link: string
+  pubDate: string
+  summary: string
+  /** 仅当日最新条目会尝试解析；页面结构变化时为空，渲染层回退摘要。 */
+  headlines?: NewsHeadline[]
+  /** 当日页的全部速览栏目（要闻只是第一个）；渲染层分组滚动展示。 */
+  sections?: NewsSection[]
+}
+
+export type NewsFeedResult = { status: 'ok'; items: NewsItem[] } | { status: 'error'; message: string }
+
+export interface DeepSeekBalanceInfo {
+  currency: string
+  totalBalance: number | null
+  grantedBalance: number | null
+  toppedUpBalance: number | null
+}
+
+export interface DeepSeekBalance {
+  isAvailable: boolean
+  infos: DeepSeekBalanceInfo[]
+}
+
+export type DeepSeekBalanceResult =
+  | { status: 'no-key' }
+  | { status: 'ok'; balance: DeepSeekBalance }
+  | { status: 'error'; message: string }
+
+/** DSH 本地会话日志聚合出的用量（今日 Token 与缓存命中率）。 */
+export interface DshUsage {
+  tokensToday: number
+  /** 0..1；本地暂无输入侧数据时为 null。 */
+  cacheHitRate: number | null
+}
+
+export type DshUsageResult =
+  | { status: 'ok'; usage: DshUsage }
+  | { status: 'no-data' }
+  | { status: 'error'; message: string }
+
+/** skills.sh 目录索引条目：只有名字与来源仓库，安装时再按仓库解析定位 target。 */
+export interface SkillsShSkill {
+  /** "owner/repo/skillId" 形式的唯一 id。 */
+  id: string
+  skillId: string
+  name: string
+  installs: number
+  /** 来源 GitHub 仓库 owner/repo。 */
+  source: string
+}
+
+export interface InstalledSkill {
+  name: string
+  description: string
+  path: string
+  format: 'bundle' | 'flat'
+  enabled: boolean
+  modelInvocable: boolean
+  userInvocable: boolean
+  /** 以下字段来自 skill receipts；仅在通过启动器安装过且有来源记录时存在。 */
+  repository?: string
+  sourcePath?: string
+  revision?: string
+}
+
+export interface SkillInstallRequest {
+  repository: string
+  defaultBranch: string
+  targetId: string
+}
+
+export interface SkillInstallResult {
+  installedSkill: InstalledSkill
+  installedSkills: InstalledSkill[]
+}
+
+export type ApplicationLaunchMode = 'runtime-replacement' | 'after-runtime' | 'standalone'
+export type ApplicationInstallProvider = 'npm'
+
+export interface ApplicationInstallTarget {
+  id: string
+  addonId: string
+  name: string
+  description: string
+  provider: ApplicationInstallProvider
+  packageName: string
+  version: string | null
+  binName: string
+  launchMode: ApplicationLaunchMode
+  launchArgs: string[]
+  platforms: Array<'win32' | 'darwin' | 'linux'>
+  supported: boolean
+  verified: boolean
+  provides: string[]
+}
+
+export interface ApplicationRepositoryAnalysis {
+  repository: string
+  defaultBranch: string
+  installability: 'ready' | 'choice' | 'unsupported' | 'invalid'
+  summary: string
+  targets: ApplicationInstallTarget[]
+}
+
+export interface InstalledApplicationAddon {
+  id: string
+  name: string
+  description: string
+  repository: string
+  provider: ApplicationInstallProvider
+  packageName: string
+  version: string
+  binName: string
+  entryPath: string
+  installPath: string
+  launchMode: ApplicationLaunchMode
+  launchArgs: string[]
+  enabled: boolean
+  verified: boolean
+  provides: string[]
+  installedAt: string
+  updatedAt: string
+}
+
+export interface ApplicationInstallRequest {
+  repository: string
+  defaultBranch: string
+  targetId: string
+}
+
+export interface ApplicationInstallResult {
+  installedAddon: InstalledApplicationAddon
+  installedAddons: InstalledApplicationAddon[]
+  profile: ProfileState
+}
+
+export interface LinkedComponentToggleResult {
+  profile: ProfileState
+  installedApplications: InstalledApplicationAddon[]
+  linked: boolean
+}
+
+/**
+ * Agent 预设安装目标。DSH 的 agent-preset 是一份含 preset.yml 的目录，
+ * 安装 = 把子模块仓库内 `sourcePath` 目录复制到 `~/.dsh/.agent-presets/<name>`。
+ */
+export interface PresetInstallTarget {
+  id: string
+  name: string
+  description: string
+  /** 子模块仓库（meta-repo 分析时确定），安装请求应指向它而非父 meta-repo。 */
+  sourceRepository: string
+  /** 精确 pin commit。 */
+  revision: string
+  /** 子模块内预设目录，如 `preset/router-standard`。 */
+  sourcePath: string
+}
+
+export interface PresetRepositoryAnalysis {
+  repository: string
+  defaultBranch: string
+  installability: 'ready' | 'invalid'
+  summary: string
+  targets: PresetInstallTarget[]
+}
+
+export interface InstalledPreset {
+  name: string
+  path: string
+  /** false 表示被停用（目录在 .agent-presets/.disabled 下，DSH 不可见）。 */
+  enabled: boolean
+  /** 以下字段来自 preset receipts；仅在通过启动器安装过且有来源记录时存在。 */
+  repository?: string
+  sourcePath?: string
+  revision?: string
+}
+
+/** DSH 安装包内置的 agent preset（只读展示，由 DSH 自身管理启停）。 */
+export interface BuiltinAgentPreset {
+  /** 目录名，如 standard / cordis / minimal / code。 */
+  name: string
+  /** preset.yml 里的展示名，如「标准模式」。 */
+  displayName: string
+  description: string
+  order: number | null
+}
+
+export interface PresetInstallRequest {
+  /** 子模块仓库（meta-repo 分析确定），不是父 meta-repo。 */
+  repository: string
+  targetId: string
+  /** 预设名（.agent-presets/<name> 目录名）。 */
+  name: string
+  /** 子模块内预设目录，如 `preset/router-standard`。 */
+  sourcePath: string
+  /** 精确 pin commit。预设安装不做重分析：revision 已钉死，内容不可变。 */
+  revision: string
+}
+
+export interface PresetInstallResult {
+  installedPreset: InstalledPreset
+  installedPresets: InstalledPreset[]
+}
+
+export interface CatalogRepositoryAnalysis {
+  repository: string
+  defaultBranch: string
+  kind: CatalogKind
+  componentKinds: CatalogComponentKind[]
+  summary: string
+  pluginAnalysis: RepositoryAnalysis | null
+  skillAnalysis: SkillRepositoryAnalysis | null
+  applicationAnalysis: ApplicationRepositoryAnalysis | null
+  /** agent-preset 组件（meta-repo 子模块里的预设目录），非聚合仓库无此字段。 */
+  presetAnalysis?: PresetRepositoryAnalysis | null
+  warnings: string[]
+  /** 共享检测目录同步状态；仅运行时附加，不写入共享 XML。 */
+  sync?: CatalogSyncInfo
+}
+
+/** 共享目录 XML 中保存的最小分类标签。 */
+export type CatalogIndexTag = 'plugin' | 'skill' | 'runtime' | 'preset' | 'dsh' | 'invalid'
+
+/** 共享目录 XML 的一行；不包含检测过程、摘要或本地路径。 */
+export interface CatalogIndexEntry {
+  repository: string
+  defaultBranch: string
+  repositoryUpdatedAt: string | null
+  tags: CatalogIndexTag[]
+}
+
+export type CatalogSyncState = 'remote' | 'queued' | 'published' | 'not-authenticated' | 'unavailable' | 'stale-fallback'
+
+export interface CatalogSyncInfo {
+  source: 'github' | 'local'
+  state: CatalogSyncState
+  message: string
+  pullRequestUrl?: string
+}
+
+export type CatalogAnalysisCheck = 'plugin' | 'skill' | 'application'
+export type CatalogAnalysisCheckState = 'pending' | 'running' | 'complete' | 'failed'
+
+/** 单个仓库的实时检测步骤。三个结构检测器并行执行，不表示虚拟下载百分比。 */
+export interface CatalogAnalysisProgress {
+  repository: string
+  phase: 'preparing' | 'checking' | 'classifying' | 'complete' | 'error'
+  message: string
+  completed: number
+  total: 3
+  checks: Record<CatalogAnalysisCheck, CatalogAnalysisCheckState>
+}
+
+export interface CatalogDiscoveryResult {
+  repositories: CatalogRepositoryResult[]
+  topicTotals: Record<CatalogCandidateType, number>
+  page: number
+  pageCount: number
+  rateRemaining?: number
+  warnings: string[]
+  dshInstallation: DshInstallationStatus
+  installedRepositories: string[]
+  installedSkills: InstalledSkill[]
+  installedApplications: InstalledApplicationAddon[]
+  installedPresets: InstalledPreset[]
+}
+
+/** 从 GitHub 链接导入的结果：市场行 + 已完成的仓库分析。 */
+export interface CatalogImportResult {
+  repository: CatalogRepositoryResult
+  analysis: CatalogRepositoryAnalysis
+}
+
+export interface InstallProgress {
+  repository: string
+  kind: 'plugin' | 'dsh' | 'skill' | 'application' | 'preset'
+  phase: 'preparing' | 'resolving' | 'downloading' | 'building' | 'configuring' | 'verifying' | 'complete' | 'error'
+  percent: number
+  message: string
+  indeterminate?: boolean
+  downloadedBytes?: number
+  totalBytes?: number
+}
+
+export interface RepositoryInstallResult {
+  kind: 'plugin' | 'dsh'
+  profile: ProfileState
+  settings: AppSettings
+  dshInstallation: DshInstallationStatus
+  installedProfileName?: string
+  packageName?: string
+}
+
+/**
+ * 官方桌面端（DSH Desktop）管理面板的状态。
+ *
+ * 它不是整合包：那份环境归桌面端自己管，我们只能读它的清单、通过它自带的命令装卸插件。
+ * 未安装时只有 `installed: false`，其余字段全空。
+ */
+export interface DesktopPluginState {
+  installed: boolean
+  /** 桌面端版本，如 `0.2.0-rc.2`。 */
+  version?: string | null
+  executable?: string
+  /** 按进程名探测的运行状态（它常被用户自己打开，不是我们 spawn 的子进程）。 */
+  running?: boolean
+  pluginCount?: number
+  plugins?: ManagedPlugin[]
+  /** 它 profile 的 .npmrc 里当前的 registry；null = 没配过，走默认源。 */
+  registry?: string | null
+  /** 点「配镜像」时会写入的值（来自用户的网络设置）。 */
+  mirrorRegistry?: string
+}
+
+export interface RuntimeState {
+  /** 这条状态属于哪个整合包实例（并发运行时界面按包区分）。 */
+  packId?: string | null
+  running: boolean
+  pid: number | null
+  startedAt: string | null
+  url: string | null
+  port: number | null
+  launchMode?: 'web' | 'application-replacement'
+  applicationAddonId?: string | null
+  applicationAddonName?: string | null
+  /** 最近一次非正常退出，供界面显示 AI 修复入口。新一轮启动时清空。 */
+  lastFailure?: RuntimeFailure | null
+}
+
+/**
+ * 启动失败发生在哪一步。决定弹窗标题与给 agent 的提示词方向：
+ * 端口/拉起失败是环境问题，运行中退出才可能是 DSH 本身的问题。
+ */
+export type LaunchFailureStage = 'port' | 'spawn' | 'exited'
+
+export interface RuntimeFailure {
+  profileName: string
+  stage: LaunchFailureStage
+  diagnostics: string
+  failedAt: string
+}
+
+export interface RuntimeOutput {
+  channel: 'runtime' | 'plugin' | 'test' | 'ai'
+  level: 'info' | 'error' | 'success'
+  text: string
+  timestamp: string
+}
+
+export type AiInstallPhase = 'idle' | 'preparing' | 'running' | 'done' | 'cancelled' | 'error'
+
+export interface AiInstallStatus {
+  phase: AiInstallPhase
+  repository: string | null
+  taskKind: 'repository-install' | 'plugin-adaptation' | 'runtime-repair'
+  subject: string | null
+  startedAt: string | null
+  sessionId: string | null
+  message: string
+}
+
+export type PluginTrialPhase = 'running' | 'passed' | 'failed'
+
+/** 插件隔离试运行的实时状态与最近结果。 */
+export interface PluginTrialResult {
+  packageName: string
+  profileName: string
+  phase: PluginTrialPhase
+  message: string
+  diagnostics: string
+  startedAt: string
+  testedAt: string | null
+  durationMs: number | null
+  url: string | null
+}
+
+/** 渲染层看到的待审批请求（args 已脱敏截断）。 */
+export interface AiApprovalRequest {
+  id: string
+  sessionId?: string
+  toolName: string
+  toolKind: string | null
+  args: string
+  reason: string
+}
+
+export type AiInstallEvent =
+  | { kind: 'status'; status: AiInstallStatus }
+  | { kind: 'log'; text: string; stream?: boolean }
+  | { kind: 'auto-approved'; toolName: string; reason: string }
+  | { kind: 'approval'; request: AiApprovalRequest }
+  | { kind: 'snapshot'; snapshotId: string }
+  | { kind: 'done'; message: string }
+  | { kind: 'cancelled'; message: string }
+  | { kind: 'error'; message: string }
+
+export interface AiInstallResult {
+  ok: boolean
+  message: string
+}
+
+// ===================== 整合包（Pack）管理 =====================
+
+export type PackSource = 'created' | 'zip' | 'manifest' | 'raw' | 'snapshot'
+
+export interface PackPluginEntry {
+  packageName: string
+  /** 完整安装目标；用于导入时不重新猜测仓库结构。 */
+  targetId?: string
+  repository?: string        // github 源
+  defaultBranch?: string
+  source?: 'github' | 'npm' | 'local'
+  subdirectory?: string
+  commit?: string
+  version?: string
+  /** 清单期望状态；缺省为启用。 */
+  enabled?: boolean
+  /** 清单声明的精确 pnpm 构建许可策略。 */
+  allowBuilds?: string[]
+  denyBuilds?: string[]
+}
+
+export type AiSessionKind = 'chat' | 'repository-install' | 'plugin-adaptation' | 'runtime-repair'
+export type AiSessionPhase = 'idle' | 'queued' | 'preparing' | 'running' | 'done' | 'cancelled' | 'error' | 'interrupted'
+
+export interface AiMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  text: string
+  createdAt: string
+  streaming?: boolean
+  /** 助手消息的思考/推理内容（流式到达，前端默认收起展示）。 */
+  reasoning?: string
+}
+
+export interface AiQueueState {
+  position: number | null
+  total: number
+  running: boolean
+  mutating: boolean
+  reason?: string | null
+}
+
+export interface AiSessionSummary {
+  id: string
+  kind: AiSessionKind
+  title: string
+  subject: string | null
+  phase: AiSessionPhase
+  createdAt: string
+  updatedAt: string
+  queue: AiQueueState
+  messageCount: number
+  pendingApproval: AiApprovalRequest | null
+  hasSnapshot: boolean
+  /** 会话固定使用的模型（"provider|model"）；空表示自动选择。 */
+  model?: string | null
+}
+
+export interface AiSession extends AiSessionSummary {
+  messages: AiMessage[]
+}
+
+/** Copilot 模型选择器候选。 */
+export interface CopilotModelOption {
+  /** 稳定标识：deepseek-official 或自定义 provider 路由。 */
+  provider: string
+  model: string
+  label: string
+  /** 当前是否可用（缺密钥或协议不兼容时不可用）。 */
+  available: boolean
+}
+
+export type AiSessionEvent =
+  | { kind: 'session-created'; session: AiSession }
+  | { kind: 'session-updated'; session: AiSession }
+  | { kind: 'message'; sessionId: string; message: AiMessage }
+  | { kind: 'approval'; sessionId: string; request: AiApprovalRequest }
+  | { kind: 'snapshot'; sessionId: string; snapshotId: string }
+  | { kind: 'deleted'; sessionId: string }
+
+export interface AiSessionCreateInput {
+  kind?: AiSessionKind
+  title?: string
+  subject?: string | null
+}
+
+export interface PackPresetEntry {
+  /** 预设目录名，也是 `~/.dsh/.agent-presets/<name>` 的目录名。 */
+  name: string
+  /** 子模块仓库（meta-repo 分析确定）。 */
+  repository?: string
+  /** 子模块内预设目录，如 `preset/router-standard`。 */
+  sourcePath?: string
+  /** 精确 pin commit。 */
+  revision?: string
+}
+
+export interface PackSkillEntry {
+  name: string
+  format: 'bundle' | 'flat'
+  /** 子模块仓库（meta-repo 分析确定）。 */
+  repository?: string
+  /** 子模块内 Skill 源路径，如 `skills/git-workflow` 或 `skills/quick-ref.md`。 */
+  sourcePath?: string
+  /** 精确 pin commit。 */
+  revision?: string
+}
+
+export interface PackApplicationEntry {
+  id: string
+  name: string
+  repository: string
+  packageName: string
+  version: string
+  binName: string
+  launchMode: ApplicationLaunchMode
+  launchArgs: string[]
+  provides: string[]
+}
+
+export interface PackManifest {
+  name: string
+  description: string
+  version: string
+  /** 当前整合包要求使用的 DSH 精确版本；导入当前版本时必须提供。 */
+  dshVersion?: string
+  author?: string
+  plugins: PackPluginEntry[]
+  presets?: PackPresetEntry[]
+  skills?: PackSkillEntry[]
+  applications?: PackApplicationEntry[]
+}
+
+/** 整合包携带的可迁移启动器配置（launcher-config.yaml）；凭据与本体/DSH_HOME 路径一律不进。 */
+export interface PackLauncherConfig {
+  workspace?: string
+  launchArgs?: string[]
+  webPort?: number
+  openAfterLaunch?: boolean
+  uiTheme?: UiTheme
+  network?: NetworkSettings
+}
+
+export interface PackAnalysisItem {
+  packageName: string
+  available: boolean          // 能否安装
+  offline: boolean            // 插件本体是否在 zip 内（离线装）
+  enabled?: boolean            // 清单期望状态；false 表示安装后保持关闭
+  kind?: 'plugin' | 'skill' | 'preset' | 'application'   // 缺省为插件；技能/预设/应用项的 packageName 即名称
+  reason?: string             // 不可装原因
+}
+
+export interface PackAnalysis {
+  id: string                  // = pack-<safeName>
+  name: string
+  description: string
+  version: string
+  dshVersion: string | null
+  source: PackSource
+  items: PackAnalysisItem[]
+}
+
+export interface PackInstalledPlugin {
+  packageName: string
+  enabled: boolean
+  version?: string
+}
+
+/** raw 整合包导入的技能（全局安装，记入包以支持删包清理）。 */
+export interface PackInstalledSkill {
+  name: string
+  format: 'bundle' | 'flat'
+  enabled: boolean
+  description?: string
+}
+
+/** 整合包记录的 Agent 预设（全局安装，记入包以支持导出与删包清理）。 */
+export interface PackInstalledPreset {
+  name: string
+  enabled: boolean
+  description?: string
+}
+
+/** 整合包记录的 Application Addon（独立安装目录，记入包以支持导出与删包清理）。 */
+export interface PackInstalledApplication {
+  id: string
+  name: string
+  enabled: boolean
+}
+
+/**
+ * 导出整合包时可以显式带出的隐私内容（默认全不带）。
+ * 与 electron/pack-snapshot.ts 的 SnapshotPrivacyInclude 同一形状，这里独立声明
+ * 是为了让渲染层不必去 import 主进程模块。
+ */
+export interface PackExportPrivacy {
+  credentials?: boolean
+  sessions?: boolean
+}
+
+/** 自检单条结论的状态（与 electron/pack-verify.ts 的 PackVerifyStatus 一致）。 */
+export type PackVerifyCheckStatus = 'pass' | 'warn' | 'fail' | 'skip'
+
+export interface PackVerifyCheck {
+  /** 1-5，与计划里的编号一致。 */
+  id: number
+  title: string
+  status: PackVerifyCheckStatus
+  /** 一行结论（界面直接渲染）。 */
+  detail: string
+  /** 逐项明细（主进程已截断到 50 条）。 */
+  findings: string[]
+}
+
+/**
+ * 一个 .zip（整合包快照）的只读自检报表。
+ * 结构与 electron/pack-verify.ts 的 PackVerifyReport 等价；渲染层不能 import electron 目录，故在此重复声明。
+ */
+export interface PackVerifyReport {
+  ok: boolean
+  /** 总判定文案（能启动 / 有 N 处对不上号）。 */
+  verdict: string
+  dshVersion: string | null
+  availableKernels: string[]
+  checks: PackVerifyCheck[]
+  /** 可一键复制的修复提示词；没问题时是空串。 */
+  prompt: string
+}
+
+/**
+ * 后台装配（工作台）运行目录里 status.json 的形状。
+ * 与 electron/workbench-ipc.ts 的读取逻辑等价；渲染层不能 import electron 目录，故在此重复声明。
+ * 读不到就是 null —— 界面显示空闲态，不补任何假数据。
+ */
+export interface WorkbenchStatus {
+  /** 引擎的阶段：start / prepare / boot / install / uninstall / compare / restore / done / blocked / failed。 */
+  phase: string
+  kernel: {
+    version: string | null
+    state: 'ok' | 'missing' | string
+  }
+  /** 已过审的插件（按通过顺序）。 */
+  passed: string[]
+  /** 当前正在核验的插件；null = 这一拍没有。 */
+  current: string | null
+  startedAt: string | null
+  /** 阻塞/失败时的原因。界面不显示它：里面是给人排查的绝对路径。 */
+  reason: string | null
+}
+
+/**
+ * 导出前几件里的「附件」：<家目录>/extras/ 的存在性与顶层条目数（只读探测，不存在也不建）。
+ * 计数口径与整合包列表行的「· 附件 N」一致：readdir 顶层条目数，子目录算 1 条。
+ */
+export interface PackExtras {
+  exists: boolean
+  count: number
+}
+
+export interface PackStatus {
+  id: string
+  name: string
+  description: string
+  version: string
+  /** 当前整合包要求的 DSH 版本；旧注册表记录可能为空。 */
+  dshVersion: string | null
+  source: PackSource
+  /** 当前激活的整合包（真隔离环境的唯一指针）。 */
+  enabled: boolean
+  /** 安装 DSH 版本时自动生成的包。 */
+  auto?: boolean
+  /**
+   * 这个包住在启动器之外的 DSH 环境里：装启动器之前就用 `dsh` 命令跑过，
+   * 配置与会话都在默认家目录。它不是一套新的隔离环境，与其它同家目录的包共用数据。
+   */
+  native?: boolean
+  /** 官方默认整合包的版本号（有值 = 官方包，可删可恢复）。 */
+  officialVersion?: string
+  state: 'complete' | 'partial' | 'failed'
+  plugins: PackInstalledPlugin[]
+  skills?: PackInstalledSkill[]
+  presets?: PackInstalledPreset[]
+  applications?: PackInstalledApplication[]
+  /** state 为 partial/failed 时的失败项（含原因），完整包缺省省略。 */
+  failures?: { packageName: string; reason: string }[]
+  /** 家目录顶层 extras/（附件）的条目数，packs:list 现算，不落注册表。 */
+  extrasCount?: number
+  /**
+   * 本地Link（绿）：依赖 spec 指向本地目录——`link:`、包内
+   * `.dsh-launcher-plugin-bodies/` 的 file: 形式、或绝对路径 file:/link:。
+   * 本机能跑就行，导出时才搬进包。
+   */
+  vaultCount?: number
+  /**
+   * 安全外联（蓝）：依赖 spec 是版本号，且 node_modules 里实际装的版本与声明对得上。
+   * pnpm 不会冲掉它，换机也能从 registry 重装。
+   */
+  remoteCount?: number
+  /** 需转移（红）：node_modules 里有目录、但 dependencies 里没声明——pnpm 下次动依赖会清掉。 */
+  moveCount?: number
+  installedAt: string
+  updatedAt: string
+}
+
+/**
+ * 离线整合包导入的阶段码。主进程只在跨阶段时推一次，界面据此换状态行右上角那行小字。
+ * 码值由 electron/pack-offline-import.ts 的 progress() 决定，两边必须一致。
+ */
+export type PackImportStage = 'precheck' | 'kernel' | 'skeleton' | 'install' | 'extras' | 'verify' | 'done'
+
+/** 主进程推给界面的阶段事件：只有阶段码——没有百分比、没有路径、没有插件个数。 */
+export interface PackImportProgress {
+  stage: PackImportStage
+}
+
+/**
+ * 一次导入请求。导入永远是「新建一个实例」：
+ * 文件夹名决定磁盘上的包标识（家目录名 / Profile 名），实例名只是列表里给人看的名字，
+ * 所以两者分开两个字段——文件夹名只会是 ASCII，实例名允许中文。
+ */
+export interface PackImportRequest {
+  /** 用户选的整合包目录（必须绝对路径，主进程校验）。包标识从它的文件夹名派生。 */
+  packDir: string
+  /** 实例显示名，默认等于文件夹名；允许中文，与文件夹名分开存。 */
+  name: string
+  /**
+   * 文件夹名（= 磁盘上的包标识 = Profile 名）的用户输入，界面上的「文件夹名」那格。
+   * 省略 / 空串 = 沿用解包后查到的目录名（老调用方与「选文件夹」路径）。
+   * 给了就以它为准；合法性由主进程按 folderNameIssue 的同一口径复核。
+   */
+  folderName?: string
+}
+
+/**
+ * 导入结果。失败时 reason 是人话且保证不含绝对路径：路径只落在日志里，
+ * 要排查就去看日志（界面上给路径既看不懂也容易看错）。
+ */
+export type PackImportOutcome =
+  | { ok: true; packId: string; packName: string }
+  | { ok: false; reason: string }
+
+/** Release 上的一个官方默认整合包资产。 */
+export interface OfficialPackRelease {
+  /**
+   * 官方包版本号。新命名 = 适配的 DSH 版本 + 序号（如 0.1.5-rc.2.1）；
+   * 旧命名就是启动器版本（如 0.1.1），与 DSH 版本无关。
+   */
+  version: string
+  /**
+   * 该包适配的 DSH 版本，如 0.1.5-rc.2（取自 Release 正文的构建元信息，或版本号命名里的编码）。
+   * null = 两处都读不到（旧命名的历史资产）——不得用包版本号冒充，界面显示「未标注」，
+   * 能拿本机已装这个包的真实绑定版本补上就补。
+   */
+  dshVersion: string | null
+  assetName: string
+  /** 资产下载地址（主进程下载用；渲染层不需要它）。 */
+  assetUrl: string
+  /** 资产字节数；GitHub 没给时为 0。 */
+  size: number
+  releaseTag: string
+  publishedAt: string | null
+  /** Release 正文（构建时记录 web-all / officecli / dsh 三个版本）。 */
+  notes?: string | null
+}
+
+/** 官方整合包的整体状态：推荐版本、本机已装版本、是否有更新。 */
+export interface OfficialPackStatus {
+  /** 推荐版本（Release 里最新的官方包）；列表读不到时为 null。 */
+  recommended: string | null
+  /** 本机已导入的官方包版本号（升序）。 */
+  installedVersions: string[]
+  /** 存在比本机最新已装版本更高的官方包。 */
+  updateAvailable: boolean
+  /** 列表读取失败的原因；null = 正常。 */
+  error: string | null
+  checkedAt: string | null
+}
+
+/** importPack 的可选覆盖项（raw 导入时的包名覆盖）。 */
+export interface PackImportOptions {
+  name?: string
+  /** Explicitly replace an existing Profile; default imports create a new
+   * suffixed Profile instead of changing the current environment. */
+  overwrite?: boolean
+  /** Remote Profile import mode. Full mode requires every plugin body in the archive. */
+  mode?: 'source' | 'full'
+  /** Main-process-only validated shared body paths for matched local plugins. */
+  localPluginBodies?: Record<string, string>
+}
+
+export type ProfileRepositoryImportMode = 'source' | 'full'
+
+export interface ProfileRepositoryPluginPreview {
+  packageName: string
+  enabled: boolean
+  order: number
+  source: 'npm' | 'github' | 'local'
+  repository: string | null
+  version: string | null
+  commit: string | null
+  match: 'declared' | 'matched' | 'ambiguous' | 'missing'
+  candidates: PackPluginEntry[]
+  reason?: string
+}
+
+export interface ProfileRepositoryImportPreview {
+  repository: string
+  branch: string
+  commit: string | null
+  manifestPath: 'dsh-profile.yaml' | 'dsh-pack.yaml'
+  profileName: string
+  description: string
+  version: string
+  dshVersion: string
+  dshVersionInstalled?: boolean
+  plugins: ProfileRepositoryPluginPreview[]
+  hasFullPackage: boolean
+  fullPackagePluginBodies: string[]
+  differences: { kind: 'added' | 'removed' | 'version' | 'commit' | 'enabled' | 'order'; packageName: string; detail: string }[]
+  blockers: string[]
+}
+
+export interface PackInstallResult {
+  id: string
+  installed: string[]
+  failures: { packageName: string; reason: string }[]
+  state: 'complete' | 'partial' | 'failed'
+  /**
+   * 导入后主进程顺手跑的那次自检（IPC.packsImport 附带返回）。
+   * 自检本身失败、或走了不发报告的路径时是 null —— 一律不影响导入结果。
+   */
+  verify?: PackVerifyReport | null
+}
+
+export type PackProgressEvent =
+  | { kind: 'status'; message: string }
+  /**
+   * 包体下载进度（官方整合包这类百 MB 级资产）：界面据此画可视化进度条。
+   * `speed` 为字节/秒的滑动平均（换源后重新起算），`source` 是当前下载源（镜像域名 / GitHub 直连）。
+   */
+  | { kind: 'download'; label: string; received: number; total: number | null; speed: number | null; source: string }
+  /**
+   * 导入阶段（下载之后）：解压快照、准备缺失的 DSH 运行时等没有字节进度的阶段，只有一句话和可能的百分比。
+   * 界面用它顶掉已完成的下载进度条，避免「100% 卡住」的错觉。
+   */
+  | { kind: 'stage'; label: string; percent: number | null }
+  | { kind: 'phase'; phase: string; itemIndex?: number; itemTotal?: number }
+  | { kind: 'extract'; done: number; total: number }
+  | { kind: 'item-start'; packageName: string; offline: boolean }
+  | { kind: 'item-done'; packageName: string; ok: boolean; reason?: string }
+  | { kind: 'snapshot' }
+  | { kind: 'done'; result: PackInstallResult }
+  | { kind: 'cancelled' }
+  | { kind: 'error'; message: string }
+
+/** 会话记录搬运中一类被跳过的原因（label 是给人看的短句，来自 electron/session-transfer.ts）。 */
+export interface SessionImportSkipped {
+  reason: string
+  count: number
+  label: string
+}
+
+/** 会话引用了、但目标包里没有的名字：搬完要如实告诉用户哪里可能异常。 */
+export interface SessionImportDangling {
+  presets: string[]
+  plugins: string[]
+}
+
+/** 「导入会话」确认屏要的信息，全部来自主进程的只读预览。 */
+export interface SessionImportPreview {
+  sourcePackId: string
+  targetPackId: string
+  sourceName: string
+  targetName: string
+  importableCount: number
+  importableBytes: number
+  /** 随会话一并合并的归档与附件字节数。 */
+  extraBytes: number
+  skipped: SessionImportSkipped[]
+  /** 目标包一条会话都没有时，版本门只能放行——界面要说明这是未判定。 */
+  formatUnverified: boolean
+  dangling: SessionImportDangling
+}
+
+/** 执行结果：多了 copiedFiles/copiedBytes 与撤销凭据 undoId。 */
+export interface SessionImportResult extends SessionImportPreview {
+  copiedFiles: number
+  copiedBytes: number
+  undoId: string
+}
+
+export interface SessionImportUndoResult {
+  removed: number
+  /** 被 DSH 追加过、因此不敢删的文件数。 */
+  kept: number
+  error?: string
+}
+
+/** 包体下载进度（即 PackProgressEvent 的 download 分支），给进度条直接用。 */
+export type PackDownloadProgress = Omit<Extract<PackProgressEvent, { kind: 'download' }>, 'kind'>
+
+/** 导入阶段进度（即 PackProgressEvent 的 stage 分支），下载完成后的进度条用它。 */
+export type PackStageProgress = Omit<Extract<PackProgressEvent, { kind: 'stage' }>, 'kind'>
+
+export interface DshMarketPlugin {
+  name: string
+  owner: string
+  url: string
+  category: string
+  description: Record<string, string | undefined>
+  npm: string | null
+  stars: number
+  added: string
+  install: string
+  installed: boolean
+  enabled: boolean
+  version: string | null
+  updateAvailable: boolean
+  updateVersion: string | null
+}
+
+export type DshMarketInstalledPlugin = DshMarketPlugin
+
+export interface DshMarketCatalog {
+  updated: string
+  count: number
+  categories: Record<string, Record<string, string>>
+  plugins: DshMarketPlugin[]
+}
+
+export interface DshMarketUpdateStatus {
+  kind: 'npm' | 'github' | 'linked'
+  current: string | null
+  latest: string | null
+  updateAvailable: boolean
+}
+
+export interface DshMarketProgress {
+  name: string
+  phase: 'loading' | 'checking' | 'resolving' | 'downloading' | 'building' | 'verifying' | 'complete' | 'error'
+  percent: number | null
+  message: string
+  downloadedBytes?: number | null
+  totalBytes?: number | null
+}
+
+export interface LauncherApi {
+  getSettings(): Promise<AppSettings>
+  saveSettings(settings: AppSettings): Promise<AppSettings>
+  detectDshInstallation(): Promise<DshInstallationStatus>
+  checkDshUpdate(): Promise<DshUpdateStatus>
+  readRuntimeEnvironment(refresh?: boolean): Promise<RuntimeEnvironmentState>
+  installDshVersion(version: string): Promise<RuntimeEnvironmentState>
+  selectDshVersion(version: string): Promise<RuntimeEnvironmentState>
+  removeDshVersion(version: string): Promise<RuntimeEnvironmentState>
+  installNodeVersion(version: string): Promise<RuntimeEnvironmentState>
+  selectNodeVersion(version: string | null): Promise<RuntimeEnvironmentState>
+  removeNodeVersion(version: string): Promise<RuntimeEnvironmentState>
+  cancelRuntimeEnvironmentOperation(): Promise<void>
+  openDshFolder(): Promise<void>
+  openNodeFolder(): Promise<void>
+  checkLauncherUpdate(): Promise<LauncherUpdateStatus>
+  downloadLauncherUpdate(): Promise<LauncherUpdateStatus>
+  applyLauncherUpdate(): Promise<void>
+  onLauncherUpdateProgress(listener: (progress: LauncherUpdateProgress) => void): () => void
+  getDeepSeekCredentialStatus(): Promise<CredentialStatus>
+  setDeepSeekApiKey(apiKey: string): Promise<CredentialStatus>
+  clearDeepSeekApiKey(): Promise<CredentialStatus>
+  listCustomApiProviders(): Promise<CustomApiProvider[]>
+  saveCustomApiProvider(input: CustomApiProviderInput): Promise<CustomApiProvider[]>
+  removeCustomApiProvider(route: string): Promise<CustomApiProvider[]>
+  getGitHubAuthStatus(): Promise<GitHubAuthStatus>
+  loginGitHubWithToken(token: string): Promise<GitHubAuthStatus>
+  beginGitHubDeviceLogin(): Promise<GitHubDeviceAuthorization>
+  completeGitHubDeviceLogin(): Promise<GitHubAuthStatus>
+  cancelGitHubDeviceLogin(): Promise<void>
+  logoutGitHub(): Promise<GitHubAuthStatus>
+  listGitHubPullRequests(): Promise<GitHubPullRequestSummary[]>
+  getGitHubStarStatus(repository: string): Promise<boolean>
+  setGitHubStar(repository: string, starred: boolean): Promise<boolean>
+  chooseDirectory(kind: 'dshInstallPath' | 'dshHome' | 'workspace' | 'packsRoot' | 'packExport'): Promise<string | null>
+  readProfile(): Promise<ProfileState>
+  listProfiles(): Promise<ProfileSummary[]>
+  createProfile(request: ProfileCreateRequest): Promise<ProfileSummary>
+  cloneProfile(sourceName: string, targetName: string, description?: string): Promise<ProfileSummary>
+  switchProfile(profileName: string, options?: { fillMissing?: boolean }): Promise<AppSettings>
+  deleteProfile(profileName: string): Promise<void>
+  readProfileMetadata(profileName: string): Promise<ProfileSummary>
+  exportProfile(profileName: string, mode: ProfileExportMode, options?: ProfileExportOptions): Promise<string | null>
+  importProfile(path: string, options?: { name?: string; overwrite?: boolean }): Promise<ProfileSummary>
+  analyzeProfileRepository(url: string): Promise<ProfileRepositoryImportPreview>
+  importProfileRepository(url: string, options: { mode: ProfileRepositoryImportMode; name?: string; overwrite?: boolean; resolutions?: Record<string, PackPluginEntry> }): Promise<ProfileSummary>
+  matchProfilePlugin(packageName: string): Promise<PackPluginEntry | null>
+  togglePlugin(packageName: string, enabled: boolean, profileName?: string): Promise<LinkedComponentToggleResult>
+  reorderPlugins(packageNames: string[]): Promise<ProfileState>
+  discoverCatalog(query: string, sort: 'stars' | 'updated', page: number): Promise<CatalogDiscoveryResult>
+  refreshCatalogIndex(): Promise<CatalogIndexEntry[]>
+  analyzeCatalogRepository(fullName: string, defaultBranch: string, repositoryUpdatedAt?: string): Promise<CatalogRepositoryAnalysis>
+  importCatalogUrl(url: string): Promise<CatalogImportResult>
+  loadDshMarket(): Promise<DshMarketCatalog>
+  installDshMarketPlugin(name: string): Promise<DshMarketInstalledPlugin[]>
+  updateDshMarketPlugin(name: string): Promise<DshMarketInstalledPlugin[]>
+  uninstallDshMarketPlugin(name: string): Promise<DshMarketInstalledPlugin[]>
+  toggleDshMarketPlugin(name: string, enabled: boolean): Promise<DshMarketInstalledPlugin[]>
+  checkDshMarketUpdates(force?: boolean): Promise<Record<string, DshMarketUpdateStatus>>
+  installPlugin(request: string | PluginInstallRequest): Promise<RepositoryInstallResult>
+  /** 手动按 npm 包名装插件（issue #10）：市场目录读不出来时的备用入口。 */
+  installPluginFromNpm(request: NpmPluginInstallRequest): Promise<RepositoryInstallResult>
+  /** 官方桌面端：读它的环境状态（未安装时 installed:false）。 */
+  desktopStatus(): Promise<DesktopPluginState>
+  desktopInstall(target: { kind: 'github' | 'npm'; name: string; version?: string }): Promise<void>
+  desktopUninstall(packageName: string): Promise<void>
+  /** 让它走国内镜像（只写它 profile 的 registry 一个键，可恢复原样）。 */
+  desktopApplyMirror(): Promise<void>
+  desktopRestoreMirror(): Promise<void>
+  /** 打开桌面端应用本身——它不是我们托管的进程，这里只负责把它叫起来。 */
+  desktopOpen(): Promise<void>
+  uninstallPlugin(packageName: string): Promise<ProfileState>
+  trialPlugin(packageName: string, profileName?: string): Promise<PluginTrialResult>
+  readPluginTrials(): Promise<PluginTrialResult[]>
+  installSkill(request: SkillInstallRequest): Promise<SkillInstallResult>
+  /** C 端技能市场：归档式检测（绕开 api.github.com 限流）与免重析安装。 */
+  skillMarketAnalyze(repository: string, defaultBranch: string): Promise<SkillRepositoryAnalysis>
+  skillMarketInstall(request: { repository: string; target: SkillInstallTarget }): Promise<SkillInstallResult>
+  /** skills.sh 目录索引（主进程聚合 + 磁盘缓存 24h），按安装量降序。 */
+  skillMarketCatalog(refresh?: boolean): Promise<SkillsShSkill[]>
+  /** 首页小部件：DeepSeek 官方余额（主进程缓存 5 分钟，force 强刷）。 */
+  deepseekBalance(force?: boolean): Promise<DeepSeekBalanceResult>
+  /** 首页小部件：juya AI 日报 RSS（主进程磁盘缓存 + SWR）。 */
+  newsFeed(): Promise<NewsFeedResult>
+  /** 首页小部件：DSH 本地会话日志聚合的今日 Token 与缓存命中率（60s 缓存）。 */
+  dshUsage(force?: boolean): Promise<DshUsageResult>
+  /** 索引条目安装：主进程按来源仓库解析归档定位 target 后落盘。 */
+  skillMarketInstallByName(request: { sourceRepository: string; skillId: string }): Promise<SkillInstallResult>
+  readInstalledSkills(): Promise<InstalledSkill[]>
+  toggleSkill(name: string, enabled: boolean): Promise<InstalledSkill[]>
+  /** 彻底卸载一个本地 Skill（删文件 + 清安装凭据）。 */
+  uninstallSkill(name: string): Promise<InstalledSkill[]>
+  installApplication(request: ApplicationInstallRequest): Promise<ApplicationInstallResult>
+  readInstalledApplications(): Promise<InstalledApplicationAddon[]>
+  toggleApplication(id: string, enabled: boolean): Promise<LinkedComponentToggleResult>
+  uninstallApplication(id: string): Promise<InstalledApplicationAddon[]>
+  installPreset(request: PresetInstallRequest): Promise<PresetInstallResult>
+  readInstalledPresets(): Promise<InstalledPreset[]>
+  /** 当前 DSH 版本内置的 agent preset（standard/cordis/minimal/code…）。 */
+  presetsBuiltin(): Promise<BuiltinAgentPreset[]>
+  togglePreset(name: string, enabled: boolean): Promise<InstalledPreset[]>
+  uninstallPreset(name: string): Promise<InstalledPreset[]>
+  getRuntimeState(): Promise<RuntimeState>
+  startRuntime(): Promise<RuntimeState>
+  stopRuntime(): Promise<RuntimeState>
+  /** 并发实例：全部整合包实例的快照（含未运行的），用于列表与首页。 */
+  listInstances(): Promise<InstanceSnapshot[]>
+  /** 启动指定整合包（不需要先切换激活包）。 */
+  startInstance(packId: string): Promise<RuntimeState>
+  stopInstance(packId: string): Promise<RuntimeState>
+  /** 只切「当前整合包」指针：不启动、不停实例。 */
+  activateInstance(packId: string): Promise<RuntimeState>
+  /** 改某个包的端口：写 instances.json 并广播快照；运行中 / 与别的包重复会被拒绝。 */
+  setInstancePort(packId: string, port: number): Promise<InstanceSnapshot[]>
+  openExternal(url: string): Promise<void>
+  openPath(path: string): Promise<void>
+  openProfilePluginFolder(packageName: string): Promise<void>
+  recommendedWebUiStatus(): Promise<RecommendedWebUiStatus>
+  recommendedWebUiInstall(options: { suspendOthers?: boolean }): Promise<RecommendedWebUiStatus>
+  setWindowMode(mode: WindowMode): Promise<void>
+  minimizeWindow(): Promise<void>
+  toggleMaximizeWindow(): Promise<boolean>
+  closeWindow(): Promise<void>
+  aiInstall(input: { repository: string; defaultBranch: string }): Promise<AiInstallResult>
+  aiAdaptPlugin(input: { packageName: string; profileName?: string }): Promise<AiInstallResult>
+  aiRepairRuntime(): Promise<AiInstallResult>
+  aiApprove(requestId: string, allow: boolean): Promise<boolean>
+  aiCancel(): Promise<void>
+  aiRollback(): Promise<{ restored: number; profileName: string }>
+  aiStatus(): Promise<AiInstallStatus>
+  aiHasSnapshot(): Promise<boolean>
+  listAiSessions(): Promise<AiSession[]>
+  createAiSession(input?: AiSessionCreateInput): Promise<AiSession>
+  sendAiSessionMessage(sessionId: string, text: string, model?: string | null): Promise<AiSession>
+  listCopilotModels(): Promise<CopilotModelOption[]>
+  setAiSessionModel(sessionId: string, model: string | null): Promise<AiSession>
+  cancelAiSession(sessionId: string): Promise<void>
+  approveAiSession(sessionId: string, requestId: string, allow: boolean): Promise<boolean>
+  rollbackAiSession(sessionId: string): Promise<{ restored: number; profileName: string }>
+  deleteAiSession(sessionId: string): Promise<void>
+  listPacks(): Promise<PackStatus[]>
+  analyzePackImport(path: string): Promise<PackAnalysis>
+  importPack(path: string, items?: string[], options?: PackImportOptions): Promise<PackInstallResult>
+  exportPack(packId: string, privacy?: PackExportPrivacy): Promise<string | null>
+  /** 预览把源包会话记录搬进目标包会做什么（只读，不写盘）。 */
+  previewSessionImport(sourcePackId: string, targetPackId: string): Promise<SessionImportPreview>
+  /** 执行搬运：只新增、不覆盖，返回结果与撤销凭据。 */
+  importSessionHistory(sourcePackId: string, targetPackId: string): Promise<SessionImportResult>
+  /** 按 undoId 撤销一次搬运；被动过的文件不会被删。 */
+  undoSessionImport(undoId: string): Promise<SessionImportUndoResult>
+  /** 升版副本：复制出一个新整合包并认 dshVersion，旧包原样留着当退路。 */
+  createVersionClone(packId: string, request: { dshVersion: string; name?: string }): Promise<PackStatus>
+  /** 恢复当前版本的官方默认整合包（从 GitHub Release 下载导入）；失败抛错。 */
+  restoreOfficialPack(): Promise<PackInstallResult>
+  /** 列出 Release 上所有官方默认整合包版本（按版本降序，第一项即推荐版本）。 */
+  listOfficialPackVersions(): Promise<OfficialPackRelease[]>
+  /** 官方整合包状态：推荐版本 / 已装版本 / 是否有更新；列表读不到时 error 有值而不抛。 */
+  readOfficialPackStatus(force?: boolean): Promise<OfficialPackStatus>
+  /** 下载并导入指定版本的官方整合包（重复下载同名会得到「… (2)」）。 */
+  installOfficialPackVersion(version: string): Promise<PackInstallResult>
+  pickPackFile(): Promise<string | null>
+  /** 离线整合包：选包目录（不选就返回 null）。只弹目录选择框，不读盘内容。 */
+  pickOfflinePackDir(): Promise<string | null>
+  /** 离线整合包：选 .zip 压缩包（不选就返回 null）。只弹文件选择框，不解压。 */
+  pickOfflinePackZip(): Promise<string | null>
+  /**
+   * 离线整合包：装配出一个新实例并把包登记进列表。
+   * 不抛错——失败也走返回值（`{ ok: false, reason }`），reason 已翻成人话且不含路径。
+   */
+  importOfflinePack(request: PackImportRequest): Promise<PackImportOutcome>
+  /** 离线整合包：尽力取消。主进程在下一个阶段边界停下，已经写下的部分由主进程自己收干净。 */
+  cancelOfflinePackImport(): Promise<void>
+  /** 离线整合包：阶段变化订阅（返回退订函数）。 */
+  onOfflinePackProgress(listener: (progress: PackImportProgress) => void): () => void
+  /** 对一个已安装的整合包（按 packId 定位它的家目录）跑只读自检（六条）；家目录读不了时抛错。 */
+  verifyPack(packId: string): Promise<PackVerifyReport>
+  /** 只读：后台装配进度（status.json）；没开始装配 / 引擎还没写时返回 null。 */
+  readWorkbenchStatus(): Promise<WorkbenchStatus | null>
+  /** 只读：整合包的附件目录 <家目录>/extras 是否存在、顶层几条（不存在返回 exists:false）。 */
+  readPackExtras(packId: string): Promise<PackExtras>
+  /** 只读：启动器管整合包的根目录（userData/dsh-packs），搬家提示词用它拼真路径。 */
+  readPacksRoot(): Promise<string>
+  /** 只读：启动器自己的 exe 路径。搬家 / 导出的提示词要用它写 `--verify` / `--export` 两行命令。 */
+  readLauncherExecutablePath(): Promise<string>
+  /** 只读：导出的默认落地目录（与 dsh-packs 同级，不存在时主进程先建）。不弹对话框。 */
+  readPackExportDir(): Promise<string>
+  /** 打开导出目录（与 dsh-packs 同级，不存在时主进程先建）；返回该目录路径。 */
+  openPackExportDir(): Promise<string>
+  /** 打开整合包的附件目录（<家目录>/extras/，不存在时由主进程创建）；返回该目录路径。 */
+  openPackExtras(packId: string): Promise<string>
+  /** 把一个已存在的 DSH 家目录登记成整合包：只登记 homePath，不拷贝、不移动。 */
+  adoptPackFolder(homePath: string, name?: string): Promise<PackStatus>
+  /** 把拖拽进入窗口的 .zip File 解析为磁盘绝对路径（preload 通过 webUtils 还原）。 */
+  getDroppedFilePath(file: File): string
+  activatePack(packId: string): Promise<AppSettings>
+  renamePack(packId: string, name: string): Promise<PackStatus>
+  createBlankPack(request: { name: string; dshVersion: string | null; folderName?: string | null }): Promise<PackStatus>
+  /** 整合包私有目录占用字节数（删除确认框展示）。 */
+  packDiskUsage(packId: string): Promise<number>
+  removePack(packId: string): Promise<{ removed: number }>
+  rollbackPack(): Promise<{ restored: number; profileName: string }>
+  packHasSnapshot(): Promise<boolean>
+  addPackPlugin(packId: string, packageName: string): Promise<PackStatus>
+  addPackPreset(packId: string, presetName: string): Promise<PackStatus>
+  addPackSkill(packId: string, skillName: string): Promise<PackStatus>
+  addPackApplication(packId: string, addonId: string): Promise<PackStatus>
+  togglePackItem(packId: string, packageName: string, enabled: boolean): Promise<PackStatus>
+  togglePackPreset(packId: string, presetName: string, enabled: boolean): Promise<PackStatus>
+  togglePackSkill(packId: string, skillName: string, enabled: boolean): Promise<PackStatus>
+  togglePackApplication(packId: string, addonId: string, enabled: boolean): Promise<PackStatus>
+  removePackItem(packId: string, packageName: string): Promise<PackStatus>
+  removePackPreset(packId: string, presetName: string): Promise<PackStatus>
+  removePackSkill(packId: string, skillName: string): Promise<PackStatus>
+  removePackApplication(packId: string, addonId: string): Promise<PackStatus>
+  onCatalogAnalysisProgress(listener: (progress: CatalogAnalysisProgress) => void): () => void
+  onDshMarketProgress(listener: (progress: DshMarketProgress) => void): () => void
+  onPackProgress(listener: (event: PackProgressEvent) => void): () => void
+  /** 官方整合包状态变化（启动核对完成 / 发现新版本）。 */
+  onOfficialPackStatus(listener: (status: OfficialPackStatus) => void): () => void
+  onRuntimeOutput(listener: (output: RuntimeOutput) => void): () => void
+  onRuntimeState(listener: (state: RuntimeState) => void): () => void
+  /** 端口被占用：用户答复是否结束占用进程并重试启动。 */
+  answerPortConflict(accepted: boolean, packId?: string | null): void
+  onPortConflict(listener: (prompt: PortConflictPrompt) => void): () => void
+  onInstancesChanged(listener: (instances: InstanceSnapshot[]) => void): () => void
+  onInstallProgress(listener: (progress: InstallProgress) => void): () => void
+  onPluginTrialEvent(listener: (result: PluginTrialResult) => void): () => void
+  onAiInstallEvent(listener: (event: AiInstallEvent) => void): () => void
+  onAiSessionEvent(listener: (event: AiSessionEvent) => void): () => void
+}
+
+declare global {
+  interface Window {
+    launcher?: LauncherApi
+  }
+}

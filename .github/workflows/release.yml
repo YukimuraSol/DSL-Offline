@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的标签（例如 v0.1.4，需已存在于仓库中）'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 构建并发布 Windows 便携版
+    runs-on: windows-latest
+    steps:
+      - name: 解析发布标签
+        id: meta
+        shell: bash
+        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: 检出代码
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.meta.outputs.tag }}
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+
+      # 防止打出版本号与标签不符的安装包。
+      - name: 校验 package.json 版本与标签一致
+        shell: bash
+        run: |
+          tag="${{ steps.meta.outputs.tag }}"
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::标签 $tag 与 package.json 版本 $version 不一致，请先同步后重新打标签。"
+            exit 1
+          fi
+          echo "版本校验通过：$version"
+
+      - name: 缓存 Electron 二进制
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
+
+      - name: 安装依赖
+        run: npm ci
+
+      # 发布前再跑一遍测试，避免带缺陷的构建流入 Release。
+      - name: 运行测试
+        run: npm test
+
+      - name: 打包便携版
+        env:
+          DSH_LAUNCHER_GITHUB_CLIENT_ID: ${{ vars.DSH_LAUNCHER_GITHUB_CLIENT_ID }}
+        run: npm run package:win
+
+      - name: 确认产物存在
+        shell: bash
+        run: |
+          ls -lh release/*.exe
+          test -n "$(ls release/*.exe 2>/dev/null)" || { echo "::error::未找到便携版产物。"; exit 1; }
+
+      - name: 发布到 GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.meta.outputs.tag }}"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "Release $tag 已存在，覆盖上传产物。"
+            gh release upload "$tag" release/*.exe --clobber
+          else
+            echo "创建 Release $tag。"
+            gh release create "$tag" release/*.exe \
+              --title "DSH 旋律启动器 $tag" \
+              --generate-notes
+          fi
+
+      - name: 上传产物副本
+        uses: actions/upload-artifact@v7
+        with:
+          name: DSH-Launcher-${{ steps.meta.outputs.tag }}
+          path: release/*.exe
+          retention-days: 30
+          if-no-files-found: error

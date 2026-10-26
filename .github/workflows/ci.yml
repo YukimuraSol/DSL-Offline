@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的新推送会取消尚未完成的旧运行，避免排队浪费。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 测试 · ${{ matrix.os }} · Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['20', '22']
+    env:
+      # 单元测试不启动 Electron，跳过约 100 MB 的二进制下载。
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 运行测试
+        run: npm test
+
+  build:
+    name: 类型检查与构建
+    runs-on: windows-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      # npm run build === tsc --noEmit && vite build
+      # 同时覆盖类型检查、渲染层构建和主进程/preload 打包。
+      - name: 类型检查与构建
+        env:
+          DSH_LAUNCHER_GITHUB_CLIENT_ID: ${{ vars.DSH_LAUNCHER_GITHUB_CLIENT_ID }}
+        run: npm run build
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-output
+          path: |
+            dist
+            dist-electron
+          retention-days: 7
+
+  package:
+    name: 打包 Windows 便携版
+    runs-on: windows-latest
+    needs: [test, build]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+
+      # electron 与 electron-builder 的二进制缓存，避免每次重新下载。
+      - name: 缓存 Electron 二进制
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 打包便携版
+        env:
+          DSH_LAUNCHER_GITHUB_CLIENT_ID: ${{ vars.DSH_LAUNCHER_GITHUB_CLIENT_ID }}
+        run: npm run package:win
+
+      - name: 上传便携版
+        uses: actions/upload-artifact@v7
+        with:
+          name: DSH-Launcher-portable
+          path: release/*.exe
+          retention-days: 14
+          if-no-files-found: error

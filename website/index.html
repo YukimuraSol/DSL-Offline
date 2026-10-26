@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>dsh-旋律启动器 · DeepSeek Harness 桌面启动器</title>
+<meta name="description" content="DeepSeek Harness 的 Windows 桌面启动器。装 DSH、管插件、配 API Key，都在窗口里点几下完成，不用先装 Node.js。" />
+<link rel="icon" type="image/png" href="assets/logo.png" />
+<style>
+  :root {
+    --bg: #f7f8fb;
+    --surface: #ffffff;
+    --ink: #1a2233;
+    --ink-2: #4a5568;
+    --ink-3: #8a94a6;
+    --line: #e6e9f0;
+    --brand: #6c7bff;
+    --brand-deep: #4f5ef0;
+    --amber: #f5a623;
+    --green: #1faa6e;
+    --radius: 16px;
+    --shadow-sm: 0 1px 2px rgba(26,34,51,.05), 0 4px 16px rgba(26,34,51,.06);
+    --shadow-lg: 0 8px 40px rgba(26,34,51,.12);
+    --maxw: 1080px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  a { color: var(--brand-deep); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  img { max-width: 100%; display: block; }
+
+  /* ---------- Nav ---------- */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(255,255,255,.82);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    max-width: var(--maxw); margin: 0 auto; padding: 12px 24px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .nav-logo { width: 34px; height: 34px; image-rendering: pixelated; border-radius: 8px; }
+  .nav-title { font-weight: 700; font-size: 17px; letter-spacing: .2px; }
+  .nav-links { margin-left: auto; display: flex; align-items: center; gap: 22px; font-size: 14.5px; }
+  .nav-links a { color: var(--ink-2); }
+  .nav-links a:hover { color: var(--brand-deep); text-decoration: none; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 20px; border-radius: 10px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+    border: 1px solid transparent; transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-1px); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--brand) 0%, var(--brand-deep) 100%);
+    color: #fff; box-shadow: 0 4px 14px rgba(108,123,255,.35);
+  }
+  .btn-primary:hover { box-shadow: 0 6px 20px rgba(108,123,255,.45); }
+  .btn-ghost { background: var(--surface); color: var(--ink); border-color: var(--line); }
+  .btn-ghost:hover { border-color: var(--brand); color: var(--brand-deep); }
+  .btn-sm { padding: 7px 14px; font-size: 14px; }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 72px 0 40px; text-align: center; }
+  .hero-logo { width: 88px; height: 88px; margin: 0 auto 20px; image-rendering: pixelated; border-radius: 20px; box-shadow: var(--shadow-sm); }
+  .hero h1 { font-size: 44px; font-weight: 800; letter-spacing: .5px; }
+  .hero .tagline {
+    margin: 14px auto 8px; max-width: 640px;
+    font-size: 18px; color: var(--ink-2);
+  }
+  .hero .tagline b { color: var(--ink); }
+  .hero-badges { margin: 18px 0 26px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+  .hero-badges img { height: 24px; border-radius: 5px; }
+  .hero-cta { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+  .hero-note { margin-top: 16px; font-size: 13.5px; color: var(--ink-3); }
+  .npx-line {
+    margin: 22px auto 0; max-width: 460px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: #10162b; color: #d6deff;
+    border-radius: 10px; padding: 10px 16px;
+    font-family: "Cascadia Code", Consolas, monospace; font-size: 14px;
+  }
+  .npx-line button {
+    background: none; border: none; color: #8fa3ff; cursor: pointer;
+    font-size: 13px; font-family: inherit; white-space: nowrap;
+  }
+  .npx-line button:hover { color: #c4d0ff; }
+  .hero-art {
+    margin: 48px auto 0; border-radius: 20px; overflow: hidden;
+    box-shadow: var(--shadow-lg); border: 1px solid var(--line);
+  }
+
+  /* ---------- Sections ---------- */
+  section { padding: 72px 0; }
+  .sec-head { text-align: center; margin-bottom: 44px; }
+  .sec-kicker { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: var(--brand-deep); text-transform: uppercase; }
+  .sec-head h2 { font-size: 32px; font-weight: 800; margin-top: 6px; }
+  .sec-head p { color: var(--ink-2); margin-top: 10px; max-width: 620px; margin-left: auto; margin-right: auto; }
+
+  /* before / after list */
+  .vs { border-top: 1px solid var(--line); }
+  .vs-row {
+    display: grid; grid-template-columns: 1fr 36px 1fr;
+    align-items: baseline; gap: 12px;
+    padding: 15px 4px; border-bottom: 1px solid var(--line);
+  }
+  .vs-old { color: var(--ink-3); font-size: 14.5px; }
+  .vs-old code { background: #f2f3f7; }
+  .vs-arrow { color: var(--brand-deep); text-align: center; font-size: 13px; }
+  .vs-new { font-size: 15px; }
+  code { background: #eef0f8; padding: 2px 7px; border-radius: 6px; font-family: "Cascadia Code", Consolas, monospace; font-size: .92em; }
+
+  /* feature showcase */
+  .showcase { display: flex; flex-direction: column; gap: 60px; }
+  .showcase-row { display: flex; align-items: center; gap: 48px; }
+  .showcase-row.flip { flex-direction: row-reverse; }
+  .showcase-text { flex: 1; min-width: 0; }
+  .showcase-text .ico { font-size: 30px; margin-bottom: 10px; }
+  .showcase-text h3 { font-size: 22px; font-weight: 800; margin-bottom: 10px; letter-spacing: .2px; }
+  .showcase-text p { color: var(--ink-2); font-size: 15px; line-height: 1.85; }
+  .showcase-imgs { flex: 1.15; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .showcase-imgs img {
+    width: 100%; border-radius: var(--radius);
+    border: 1px solid var(--line); box-shadow: var(--shadow-sm);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .showcase-imgs img:hover { transform: translateY(-3px) scale(1.01); box-shadow: var(--shadow-lg); }
+
+  /* screenshots */
+  .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .shot { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); }
+  .shot img { width: 100%; }
+  .shot figcaption { padding: 14px 20px; font-size: 14px; color: var(--ink-2); border-top: 1px solid var(--line); }
+  .shot figcaption b { color: var(--ink); }
+
+  /* steps */
+  .steps { counter-reset: step; display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .step {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 20px 18px; box-shadow: var(--shadow-sm);
+    position: relative;
+  }
+  .step::before {
+    counter-increment: step; content: counter(step);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+    color: #fff; font-weight: 800; font-size: 15px; margin-bottom: 12px;
+  }
+  .step h4 { font-size: 15.5px; font-weight: 700; margin-bottom: 6px; }
+  .step p { font-size: 13.5px; color: var(--ink-2); line-height: 1.6; }
+
+  /* security badges */
+  .sec-list { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .pill {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 999px; padding: 9px 18px;
+    font-size: 14px; font-weight: 600; color: var(--ink-2);
+    box-shadow: var(--shadow-sm);
+  }
+  .pill b { color: var(--ink); }
+
+  /* FAQ */
+  .faq { max-width: 760px; margin: 0 auto; }
+  details {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 22px; box-shadow: var(--shadow-sm);
+  }
+  details + details { margin-top: 12px; }
+  summary { font-weight: 700; font-size: 15.5px; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  summary::after { content: "+"; color: var(--brand-deep); font-size: 20px; font-weight: 400; }
+  details[open] summary::after { content: "–"; }
+  details p { margin-top: 10px; font-size: 14.5px; color: var(--ink-2); }
+
+  /* CTA banner */
+  .cta-banner {
+    background: linear-gradient(135deg, #5a6cff 0%, #7a5cff 100%);
+    border-radius: 24px; padding: 56px 40px; text-align: center; color: #fff;
+    box-shadow: var(--shadow-lg);
+  }
+  .cta-banner h2 { font-size: 30px; font-weight: 800; }
+  .cta-banner p { margin: 10px 0 26px; opacity: .9; }
+  .cta-banner .btn { background: #fff; color: var(--brand-deep); }
+  .cta-banner .btn:hover { box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+
+  /* footer */
+  footer { border-top: 1px solid var(--line); padding: 44px 0 56px; margin-top: 40px; }
+  .foot-grid { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 28px; }
+  .foot-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .foot-brand img { width: 30px; height: 30px; image-rendering: pixelated; border-radius: 7px; }
+  .foot-col h5 { font-size: 13px; color: var(--ink-3); letter-spacing: 1px; margin-bottom: 10px; text-transform: uppercase; }
+  .foot-col a { display: block; color: var(--ink-2); font-size: 14.5px; margin-bottom: 6px; }
+  .foot-note { margin-top: 32px; font-size: 13px; color: var(--ink-3); }
+
+  /* ---------- Animations ---------- */
+  @keyframes fade-up { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+  @keyframes float-y { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+  @keyframes gradient-pan { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+  @keyframes btn-glow { 0%, 100% { box-shadow: 0 4px 14px rgba(108,123,255,.35); } 50% { box-shadow: 0 6px 28px rgba(108,123,255,.6); } }
+
+  /* hero 入场：首屏元素依次浮现 */
+  .hero .wrap > * { animation: fade-up .8s cubic-bezier(.22,.61,.36,1) both; }
+  .hero .wrap > *:nth-child(2) { animation-delay: .08s; }
+  .hero .wrap > *:nth-child(3) { animation-delay: .16s; }
+  .hero .wrap > *:nth-child(4) { animation-delay: .26s; }
+  .hero .wrap > *:nth-child(5) { animation-delay: .36s; }
+  .hero .wrap > *:nth-child(6) { animation-delay: .46s; }
+  .hero .wrap > *:nth-child(7) { animation-delay: .56s; }
+  .hero .wrap > *:nth-child(8) { animation-delay: .64s; }
+  .hero .wrap > *:nth-child(9) { animation-delay: .74s; }
+  .hero .wrap > img.hero-logo { animation: fade-up .9s cubic-bezier(.22,.61,.36,1) both, float-y 6s ease-in-out 1.2s infinite; }
+  .hero-cta .btn-primary { animation: btn-glow 2.8s ease-in-out 1.4s infinite; }
+
+  /* 滚动进入视口时渐显 */
+  .reveal { opacity: 0; transform: translateY(28px); transition: opacity .7s ease, transform .7s cubic-bezier(.22,.61,.36,1); }
+  .reveal.visible { opacity: 1; transform: none; }
+
+  /* hover 增强 */
+  .step, .pill { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+  .step:hover, .pill:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: #d3d9ff; }
+  .shot img { transition: transform .45s ease; }
+  .shot:hover img { transform: scale(1.025); }
+  .vs-row { transition: background .2s ease; }
+  .vs-row:hover { background: #f8f9fe; }
+  summary { transition: color .2s ease; }
+  summary:hover { color: var(--brand-deep); }
+  nav { transition: box-shadow .25s ease, background .25s ease; }
+  nav.scrolled { box-shadow: 0 6px 24px rgba(26,34,51,.09); }
+
+  /* CTA 渐变流动 */
+  .cta-banner {
+    background: linear-gradient(120deg, #5a6cff, #7a5cff, #9a6bff, #5a6cff);
+    background-size: 280% 280%;
+    animation: gradient-pan 12s ease infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    .reveal { opacity: 1; transform: none; }
+  }
+
+  /* toast */
+  #toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #10162b; color: #fff; padding: 10px 22px; border-radius: 999px;
+    font-size: 14px; opacity: 0; pointer-events: none; transition: all .25s ease; z-index: 99;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 900px) {
+    .steps { grid-template-columns: 1fr 1fr; }
+    .shots { grid-template-columns: 1fr; }
+    .showcase-row, .showcase-row.flip { flex-direction: column; gap: 22px; align-items: stretch; }
+    .showcase { gap: 48px; }
+    .hero h1 { font-size: 34px; }
+    .nav-links .hide-m { display: none; }
+  }
+  @media (max-width: 560px) {
+    .steps { grid-template-columns: 1fr; }
+    .vs-row { grid-template-columns: 1fr; gap: 2px; padding: 14px 2px; }
+    .vs-arrow { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <img class="nav-logo" src="assets/logo.png" alt="dsh-旋律启动器 Logo" />
+    <span class="nav-title">dsh-旋律启动器</span>
+    <div class="nav-links">
+      <a href="#features" class="hide-m">功能</a>
+      <a href="#screenshots" class="hide-m">界面</a>
+      <a href="#quickstart" class="hide-m">快速开始</a>
+      <a href="#faq" class="hide-m">FAQ</a>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/rirko/dsh-melody-launcher" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/rirko/dsh-melody-launcher/releases/latest" target="_blank" rel="noopener">下载</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <img class="hero-logo" src="assets/logo.png" alt="鲸鱼女仆图标" />
+    <h1>dsh-旋律启动器</h1>
+    <p class="tagline"><b>DeepSeek Harness</b> 的 Windows 桌面启动器。<br />装 DSH、管插件、配 API Key，都在窗口里点几下完成，<b>不用先装 Node.js</b>。</p>
+    <div class="hero-badges">
+      <a href="https://github.com/rirko/dsh-melody-launcher/releases/latest" target="_blank" rel="noopener"><img src="https://img.shields.io/github/v/release/rirko/dsh-melody-launcher?style=flat-square&logo=github&color=6C7BFF" alt="最新版本" /></a>
+      <a href="https://github.com/rirko/dsh-melody-launcher/releases" target="_blank" rel="noopener"><img src="https://img.shields.io/github/downloads/rirko/dsh-melody-launcher/total?style=flat-square&logo=windows&logoColor=white&color=0078D6" alt="下载量" /></a>
+      <a href="https://github.com/rirko/dsh-melody-launcher/stargazers" target="_blank" rel="noopener"><img src="https://img.shields.io/github/stars/rirko/dsh-melody-launcher?style=flat-square&logo=github&color=FFB020" alt="Stars" /></a>
+      <img src="https://img.shields.io/badge/Platform-Windows%20x64%20%7C%20arm64-0078D6?style=flat-square&logo=windows&logoColor=white" alt="平台" />
+    </div>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="https://github.com/rirko/dsh-melody-launcher/releases/latest" target="_blank" rel="noopener">⬇ 下载最新版（便携 exe）</a>
+      <a class="btn btn-ghost" href="https://github.com/rirko/dsh-melody-launcher" target="_blank" rel="noopener">GitHub 仓库</a>
+    </div>
+    <p class="hero-note">单文件便携版，免安装 · 支持 Windows x64 / arm64</p>
+    <div class="npx-line">
+      <span>$ npx dsh-melody-launcher</span>
+      <button id="copyBtn" type="button">复制</button>
+    </div>
+    <p class="hero-note">已有 Node.js？也可以通过 npm 直接运行</p>
+    <div class="hero-art">
+      <img src="assets/hero.png" alt="dsh-旋律启动器宣传图 —— 草原夕阳下的鲸鱼女仆" />
+    </div>
+  </div>
+</header>
+
+<section id="why">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Why</div>
+      <h2>DSH 本身挺好用，就是上手有点折腾</h2>
+      <p>装环境、改凭据、找插件、调加载顺序，每件事都要开终端手动来。这个启动器把它们放进了图形界面，交互参考了《我的世界》忘却的旋律启动器。</p>
+    </div>
+    <div class="vs">
+      <div class="vs-row">
+        <span class="vs-old">装 Node.js 和 npm，再跑 <code>npx @deepseek-ai/dsh</code></span>
+        <span class="vs-arrow">→</span>
+        <span class="vs-new">下个 exe，点「下载安装 DSH」</span>
+      </div>
+      <div class="vs-row">
+        <span class="vs-old">手改 <code>.credentials.yaml</code> 填 API Key</span>
+        <span class="vs-arrow">→</span>
+        <span class="vs-new">界面里填，自动写入，权限设成 0600</span>
+      </div>
+      <div class="vs-row">
+        <span class="vs-old">翻 GitHub 找插件，敲 <code>dsh plugin add</code></span>
+        <span class="vs-arrow">→</span>
+        <span class="vs-new">启动器里搜 Topic，一键装</span>
+      </div>
+      <div class="vs-row">
+        <span class="vs-old">编辑 profile 的 <code>package.json</code> 调加载顺序</span>
+        <span class="vs-arrow">→</span>
+        <span class="vs-new">拖列表就行</span>
+      </div>
+      <div class="vs-row">
+        <span class="vs-old">开终端、记命令、盯输出</span>
+        <span class="vs-arrow">→</span>
+        <span class="vs-new">点启动，日志在面板里看</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" style="background:#fff; border-top:1px solid var(--line); border-bottom:1px solid var(--line);">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Features</div>
+      <h2>核心功能</h2>
+      <p>这些活本来都要敲命令，现在在启动器里点几下就行。</p>
+    </div>
+
+    <div class="showcase">
+      <div class="showcase-row">
+        <div class="showcase-text">
+          <div class="ico">🔑</div>
+          <h3>API 一键配置</h3>
+          <p>在界面里填入 DeepSeek API Key 就能用，不用手动改凭据文件。OpenAI、Anthropic 兼容的自定义服务也支持，可以存多套配置切换。Key 只写进本机 DSH_HOME 的凭据文件，启动器不回显、不上传。</p>
+        </div>
+        <div class="showcase-imgs">
+          <img src="assets/feat-01.png" alt="API 配置界面：DeepSeek 官方 Key 配置" />
+          <img src="assets/feat-02.png" alt="API 配置界面：自定义 API 服务" />
+        </div>
+      </div>
+
+      <div class="showcase-row flip">
+        <div class="showcase-text">
+          <div class="ico">🐙</div>
+          <h3>GitHub 账号登录</h3>
+          <p>支持 OAuth Device Flow 和 Fine-grained Token 两种登录方式。登录后配置随账号同步，GitHub API 的请求额度也会提高，搜插件不容易被限流。凭据用 Electron safeStorage 加密存在本机。</p>
+        </div>
+        <div class="showcase-imgs">
+          <img src="assets/feat-03.png" alt="GitHub 账号登录与配置同步" />
+        </div>
+      </div>
+
+      <div class="showcase-row">
+        <div class="showcase-text">
+          <div class="ico">🧩</div>
+          <h3>面板式插件与 Skill 管理</h3>
+          <p>Plugin、Skill、应用加载项和 Agent 预设都在一张面板里，启停、版本、兼容性直接看得到。加载顺序拖动调整，改动写进 DSH 官方 Profile，下次启动生效。</p>
+        </div>
+        <div class="showcase-imgs">
+          <img src="assets/feat-04.png" alt="插件与 Skill 管理面板" />
+        </div>
+      </div>
+
+      <div class="showcase-row flip">
+        <div class="showcase-text">
+          <div class="ico">🧭</div>
+          <h3>内置 DSH 资源市场</h3>
+          <p>不用自己去 GitHub 翻。启动器里直接搜 dsh-plugin、dsh-skill、dsh-app 三个 Topic，看中了一键安装，进度按阶段显示，全程不用开浏览器。</p>
+        </div>
+        <div class="showcase-imgs">
+          <img src="assets/feat-05.png" alt="内置 DSH 资源市场" />
+        </div>
+      </div>
+
+      <div class="showcase-row">
+        <div class="showcase-text">
+          <div class="ico">🏪</div>
+          <h3>DSH Market 精选收录</h3>
+          <p>收录了社区里质量比较好的插件和 Skill，类型按仓库真实内容标记。一个仓库里有多种组件时会列清楚，装哪个自己选。</p>
+        </div>
+        <div class="showcase-imgs">
+          <img src="assets/feat-06.png" alt="DSH Market 精选插件收录" />
+        </div>
+      </div>
+
+      <div class="showcase-row flip">
+        <div class="showcase-text">
+          <div class="ico">📦</div>
+          <h3>整合包一键导入 / 导出</h3>
+          <p>可以把当前装好的插件、Skill 和配置打成一个整合包（Modpack），导出给别人，或者换台机器一键导入还原。玩法参考《我的世界》整合包。</p>
+        </div>
+        <div class="showcase-imgs">
+          <img src="assets/feat-07.png" alt="整合包导入与导出" />
+        </div>
+      </div>
+
+      <div class="showcase-row">
+        <div class="showcase-text">
+          <div class="ico">🔄</div>
+          <h3>GitHub 项目同步</h3>
+          <p>登录 GitHub 后能直接在启动器里看项目的最近提交，跟进进度不用再去翻仓库页面。</p>
+        </div>
+        <div class="showcase-imgs">
+          <img src="assets/feat-08.png" alt="GitHub 项目同步与提交记录" />
+        </div>
+      </div>
+
+      <div class="showcase-row flip">
+        <div class="showcase-text">
+          <div class="ico">🌿</div>
+          <h3>DSH 与 Node 版本隔离管理</h3>
+          <p>DSH 本体和 Node.js 运行时分开管理，可以并存多个版本，随时切换。升级出问题就切回旧版，环境不会乱。</p>
+        </div>
+        <div class="showcase-imgs">
+          <img src="assets/feat-09.png" alt="DSH 版本管理" />
+          <img src="assets/feat-10.png" alt="Node.js 版本管理" />
+        </div>
+      </div>
+
+      <div class="showcase-row">
+        <div class="showcase-text">
+          <div class="ico">🤖</div>
+          <h3>内置 DSH Copilot</h3>
+          <p>报错或兼容问题可以问内置的 DSH Copilot。它能读取当前 DSH 环境，分析原因并给出修复建议。</p>
+        </div>
+        <div class="showcase-imgs">
+          <img src="assets/feat-11.png" alt="内置 DSH Copilot 对话排错" />
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Screenshots</div>
+      <h2>界面一览</h2>
+    </div>
+    <div class="shots">
+      <figure class="shot">
+        <img src="assets/shot-home.png" alt="启动器首页：启动 DSH" />
+        <figcaption><b>启动页</b>：运行状态、一键启动、启动配置都在这里。</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/shot-manager.png" alt="管理界面：插件与 Skill 管理" />
+        <figcaption><b>管理模式</b>：插件启停、加载顺序、资源市场和运行时管理。</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart" style="background:#fff; border-top:1px solid var(--line); border-bottom:1px solid var(--line);">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Quick Start</div>
+      <h2>五分钟跑起来</h2>
+    </div>
+    <div class="steps">
+      <div class="step"><h4>下载</h4><p>从 Releases 下载最新的便携版 exe，免安装。</p></div>
+      <div class="step"><h4>首次部署</h4><p>打开启动器，点「下载安装 DSH」，无需预装任何环境。</p></div>
+      <div class="step"><h4>配置 API Key</h4><p>在启动页填入 DeepSeek API Key，自动写入官方凭据文件。</p></div>
+      <div class="step"><h4>安装插件</h4><p>（可选）在资源市场搜索并一键安装 Plugin 或 Skill。</p></div>
+      <div class="step"><h4>启动</h4><p>点击「启动 DSH」，服务就绪后自动打开 Harness 网页。</p></div>
+    </div>
+    <div style="text-align:center; margin-top:36px;">
+      <a class="btn btn-primary" href="https://github.com/rirko/dsh-melody-launcher/releases/latest" target="_blank" rel="noopener">⬇ 立即下载最新版</a>
+    </div>
+  </div>
+</section>
+
+<section id="security">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Security</div>
+      <h2>安全设计</h2>
+    </div>
+    <div class="sec-list">
+      <span class="pill"><b>渲染进程隔离</b> · contextIsolation + sandbox</span>
+      <span class="pill"><b>受控 IPC</b> · 仅 contextBridge 固定接口</span>
+      <span class="pill"><b>凭据加密</b> · Electron safeStorage 系统级加密</span>
+      <span class="pill"><b>文件权限</b> · 凭据 0600 / 目录 0700 原子写入</span>
+      <span class="pill"><b>下载校验</b> · 强制 SHA-256 比对</span>
+      <span class="pill"><b>外链白名单</b> · 仅允许 http / https</span>
+    </div>
+  </div>
+</section>
+
+<section id="faq" style="padding-top:0;">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">FAQ</div>
+      <h2>常见问题</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>Windows 提示「不受信任的应用」怎么办？</summary>
+        <p>便携版未使用商业代码签名证书，SmartScreen 会拦截未知发布者的程序。确认文件来自官方 <a href="https://github.com/rirko/dsh-melody-launcher/releases" target="_blank" rel="noopener">Releases</a> 页面后，点击「更多信息 → 仍要运行」即可。</p>
+      </details>
+      <details>
+        <summary>已经手动装过 DSH，启动器会重复安装吗？</summary>
+        <p>不会。启动器会在运行目录、启动配置、PATH、%APPDATA%\npm 和系统 Node.js 目录中检测已有安装，检测到就直接使用。</p>
+      </details>
+      <details>
+        <summary>停用插件后文件还在硬盘上，正常吗？</summary>
+        <p>正常。停用只是把插件移出 Profile 的有序加载列表，本地依赖保留，方便随时重新启用。只有执行「卸载」才会真正移除文件。</p>
+      </details>
+      <details>
+        <summary>能在 macOS 或 Linux 上用吗？</summary>
+        <p>目前只提供 Windows 便携版（x64 / arm64）。源码在其他平台可以运行开发服务器，但 Node.js 便携运行时的自动准备仅实现了 Windows 分支。</p>
+      </details>
+      <details>
+        <summary>提示「GitHub 请求额度暂时用尽」？</summary>
+        <p>插件搜索使用 GitHub 匿名 API，每小时有速率限制。登录 GitHub 账号可提高额度，或等待一段时间后重试。</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:0;">
+  <div class="wrap">
+    <div class="cta-banner">
+      <h2>试一下？</h2>
+      <p>下载便携版 exe，几分钟就能把 DeepSeek Harness 跑起来。</p>
+      <a class="btn" href="https://github.com/rirko/dsh-melody-launcher/releases/latest" target="_blank" rel="noopener">⬇ 前往 Releases 下载</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="foot-brand">
+          <img src="assets/logo.png" alt="logo" />
+          <span>dsh-旋律启动器</span>
+        </div>
+        <p style="margin-top:12px; font-size:13.5px; color:var(--ink-3); max-width:300px;">面向 DeepSeek Harness 的 Windows 桌面启动器与插件管理器。界面交互参考《我的世界》忘却的旋律启动器。</p>
+      </div>
+      <div class="foot-col">
+        <h5>项目</h5>
+        <a href="https://github.com/rirko/dsh-melody-launcher" target="_blank" rel="noopener">GitHub 仓库</a>
+        <a href="https://github.com/rirko/dsh-melody-launcher/releases/latest" target="_blank" rel="noopener">最新 Release</a>
+        <a href="https://github.com/rirko/dsh-melody-launcher/issues" target="_blank" rel="noopener">问题反馈</a>
+      </div>
+      <div class="foot-col">
+        <h5>生态</h5>
+        <a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" rel="noopener">DeepSeek Harness</a>
+        <a href="https://github.com/topics/dsh-plugin" target="_blank" rel="noopener">dsh-plugin Topic</a>
+        <a href="https://github.com/topics/dsh-skill" target="_blank" rel="noopener">dsh-skill Topic</a>
+      </div>
+      <div class="foot-col">
+        <h5>交流</h5>
+        <a href="https://github.com/rirko/dsh-melody-launcher/issues" target="_blank" rel="noopener">Issues</a>
+      </div>
+    </div>
+    <p class="foot-note">© rirko · 本项目仓库尚未声明开源许可证 · 本页面为社区官网展示页</p>
+  </div>
+</footer>
+
+<div id="toast">已复制到剪贴板</div>
+
+<script>
+  document.getElementById('copyBtn').addEventListener('click', function () {
+    var text = 'npx dsh-melody-launcher';
+    function done() {
+      var t = document.getElementById('toast');
+      t.classList.add('show');
+      setTimeout(function () { t.classList.remove('show'); }, 1800);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallback(); });
+    } else { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  });
+
+  // ---------- 滚动渐显 ----------
+  var revealTargets = document.querySelectorAll('.sec-head, .vs, .showcase-row, .shot, .cta-banner, .foot-grid > div, .foot-note');
+  revealTargets.forEach(function (el) { el.classList.add('reveal'); });
+  // 网格/列表类容器：子元素依次延迟入场
+  document.querySelectorAll('.steps, .sec-list, .faq').forEach(function (group) {
+    Array.prototype.forEach.call(group.children, function (child, i) {
+      child.classList.add('reveal');
+      child.style.transitionDelay = Math.min(i * 70, 420) + 'ms';
+    });
+  });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          entry.target.style.transitionDelay = ''; // 清除入场延迟，避免影响 hover 过渡
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+  } else {
+    document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('visible'); });
+  }
+
+  // ---------- 导航栏滚动阴影 ----------
+  var navEl = document.querySelector('nav');
+  function onScroll() { navEl.classList.toggle('scrolled', window.scrollY > 8); }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
+
+</body>
+</html>

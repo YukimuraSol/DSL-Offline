@@ -1,0 +1,52 @@
+node_modules/
+dist/
+dist-electron/
+release/
+release-v*/
+*.log
+.env
+.env.local
+
+# 大型本地验收样本（真实整合包 1.3GB），不进版本库；tests/_probe_real_scan.test.ts 按其存在与否自动跳过。
+/整合包(1).zip
+design-skills/
+
+# scripts/perf-pack-bench.mts 的临时解包/打包目录
+/.bench-tmp/
+
+# npm run fetch:runtimes 拉来的运行时（node + pnpm，约 125MB）。
+# 注意：发布包**不含**它——build.files 只有 dist / dist-electron / package.json，
+# extraResources 里也没有 vendor。它只服务开发态的「随包」那一档，见 node-runtime.ts 的选取顺序。
+/vendor/
+
+# runtime/ 是构建产物的落地目录：npm run fetch:runtimes 解出 node+pnpm，
+# archive:runtime 压出 node-runtime-*.zip（约 45MB），bundle:kernel 放进 runtime/kernels/。
+# 全部由脚本每轮重做，六万多个文件，不进版本库。
+/runtime/
+
+# 出包体积实测的临时输出目录（--config.directories.output 指到这里，量完删）
+/release-*-probe*/
+
+# 改文件前手抄的本地副本（<文件>.bak-<主题>-<日期>），用于对照与回滚，不进版本库。
+*.bak
+*.bak-*
+
+# 一次性排查 / 验证 / 截图工作目录：每轮排查临时建，产物随时可删。
+/.verify/
+/.fix/
+/.wb-run/
+/.devshot/
+/.testbed4000/
+/.wb-fixture/
+/.handoff/
+/.tmp*/
+
+# 原子写在源文件旁边建的临时目录（<文件名>.<pid>.<uuid>.tmpdir/），写完立刻删，
+# vite 的 watcher 碰上会 EBUSY（见 vite.config.ts 的 watch.ignored）。
+*.tmpdir/
+
+# ISCC 卸载路径实测用的临时脚本：build/installer.iss 的变体，验完即弃。
+/build/installer-uninstalltest.iss
+
+# 整合包家目录搬迁前拍的 junction 快照（一次性 JSON）。
+/.unrestricted-junction-backup-*.json

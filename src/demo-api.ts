@@ -1,0 +1,2258 @@
+import type {
+  ApplicationRepositoryAnalysis,
+  AiInstallEvent,
+  AiMessage,
+  AiSession,
+  AiSessionCreateInput,
+  AiSessionEvent,
+  AiInstallStatus,
+  AppSettings,
+  CatalogAnalysisProgress,
+  CatalogIndexEntry,
+  CatalogDiscoveryResult,
+  CatalogImportResult,
+  CatalogRepositoryAnalysis,
+  CatalogRepositoryResult,
+  CredentialStatus,
+  CustomApiProvider,
+  DshInstallationStatus,
+  DshMarketCatalog,
+  DesktopPluginState,
+  DshMarketProgress,
+  DshUpdateStatus,
+  RuntimeEnvironmentState,
+  RuntimeVersionCandidate,
+  GitHubAuthStatus,
+  GitHubPullRequestSummary,
+  InstallProgress,
+  InstalledPreset,
+  InstalledSkill,
+  InstalledApplicationAddon,
+  InstanceSnapshot,
+  LauncherApi,
+  LauncherUpdateProgress,
+  LauncherUpdateStatus,
+  ManagedPlugin,
+  OfficialPackRelease,
+  PackProgressEvent,
+  PackStatus,
+  PluginInstallTarget,
+  PluginTrialResult,
+  PresetInstallTarget,
+  ProfileState,
+  RepositoryAnalysis,
+  SkillInstallTarget,
+  RuntimeOutput,
+  RuntimeState,
+  SkillRepositoryAnalysis,
+  SkillsShSkill,
+} from './types'
+import { DSH_REPOSITORY } from './constants'
+import { parseGitHubImportUrl } from './lib/github-import'
+
+let demoSettings: AppSettings = {
+  dshInstallPath: 'C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\dsh-runtime',
+  dshHome: 'C:\\Users\\demo\\.dsh',
+  profileName: 'web',
+  activePackId: 'pack-web-basic',
+  packsRoot: 'C:\\Users\\demo\\AppData\\Local\\dsh-launcher\\dsh-packs',
+  workspace: 'C:\\Users\\demo\\Projects',
+  launchExecutable: 'C:\\Program Files\\nodejs\\npx.cmd',
+  launchArgs: ['--yes', '@deepseek-ai/dsh', 'web'],
+  webPort: 3080,
+  openAfterLaunch: true,
+  uiTheme: 'deepseek',
+  dshVersion: '0.1.5-rc.1',
+  nodeVersion: null,
+}
+
+let demoPlugins: ManagedPlugin[] = [
+  {
+    packageName: '@deepseek-ai/dsh-base',
+    displayName: 'Base runtime',
+    version: '随 DSH 提供',
+    description: 'DeepSeek Harness 的核心服务、模型和工具组合层。',
+    enabled: true,
+    builtin: true,
+    locked: true,
+    compatible: true,
+    order: 1,
+  },
+  {
+    packageName: '@deepseek-ai/dsh-web-app',
+    displayName: 'Web app',
+    version: '随 DSH 提供',
+    description: '浏览器工作台与 Web 运行时组合层。',
+    enabled: true,
+    builtin: true,
+    locked: true,
+    compatible: true,
+    order: 2,
+  },
+  {
+    packageName: '@zhu1090093659/dsh-web-ui',
+    displayName: 'Web UI collection',
+    version: '1.7.2',
+    description: '任务看板、Git 图谱、右侧面板、移动端与实时 token 统计。',
+    repository: 'https://github.com/zhu1090093659/dsh-web-ui',
+    repositoryFullName: 'zhu1090093659/dsh-web-ui',
+    enabled: true,
+    builtin: false,
+    locked: false,
+    compatible: true,
+    order: 3,
+  },
+  {
+    packageName: '@liustack/modlens',
+    displayName: 'ModLens',
+    version: '0.9.4',
+    description: '为纯文本智能体提供 OCR、布局和图像语义证据。',
+    repository: 'https://github.com/liustack/modlens',
+    repositoryFullName: 'liustack/modlens',
+    enabled: true,
+    builtin: false,
+    locked: false,
+    compatible: true,
+    order: 4,
+  },
+  {
+    packageName: '@deepseek-harness-tui/dsh-tui',
+    displayName: 'DSH TUI',
+    version: '2.3.0',
+    description: 'Claude Code 风格的全屏终端交互界面。',
+    repository: 'https://github.com/ccch1mneyyy/dsh-TUI',
+    repositoryFullName: 'ccch1mneyyy/dsh-TUI',
+    enabled: false,
+    builtin: false,
+    locked: false,
+    compatible: true,
+    order: null,
+  },
+]
+
+const demoRepositories: CatalogRepositoryResult[] = [
+  { id: 0, fullName: 'deepseek-ai/deepseek-harness', name: 'deepseek-harness', owner: 'deepseek-ai', description: 'DeepSeek Harness 官方本体。', url: 'https://github.com/deepseek-ai/deepseek-harness', stars: 71883, language: 'TypeScript', updatedAt: '2026-08-14T05:20:00Z', topics: ['dsh-plugin', 'dsh', 'cordis'], defaultBranch: 'master', kind: 'dsh', candidateTypes: [] },
+  { id: 1, fullName: 'zhu1090093659/dsh-web-ui', name: 'dsh-web-ui', owner: 'zhu1090093659', description: 'Plugin and skin collection for DeepSeek Harness Web UI.', url: 'https://github.com/zhu1090093659/dsh-web-ui', stars: 863, language: 'TypeScript', updatedAt: '2026-08-14T03:20:00Z', topics: ['dsh-plugin', 'web-ui', 'deepseek-harness'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['plugin'] },
+  { id: 2, fullName: 'liustack/modlens', name: 'modlens', owner: 'liustack', description: 'The first vision plugin for DeepSeek Harness.', url: 'https://github.com/liustack/modlens', stars: 829, language: 'TypeScript', updatedAt: '2026-08-14T02:10:00Z', topics: ['dsh-plugin', 'vision', 'ocr'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['plugin'] },
+  { id: 3, fullName: 'ccch1mneyyy/dsh-TUI', name: 'dsh-TUI', owner: 'ccch1mneyyy', description: 'Claude Code 风格全屏交互终端插件。', url: 'https://github.com/ccch1mneyyy/dsh-TUI', stars: 443, language: 'TypeScript', updatedAt: '2026-08-14T04:10:00Z', topics: ['dsh-plugin', 'tui', 'terminal'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['plugin'] },
+  { id: 4, fullName: 'omdsh-dev/DSH-better-sidebar', name: 'DSH-better-sidebar', owner: 'omdsh-dev', description: '支持文件、终端、Git 和子代理的侧边栏工作台。', url: 'https://github.com/omdsh-dev/DSH-better-sidebar', stars: 337, language: 'TypeScript', updatedAt: '2026-08-13T21:30:00Z', topics: ['dsh-plugin', 'sidebar'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['plugin'] },
+  { id: 101, fullName: 'TohsakaRIN521/dsh-academic-skill', name: 'dsh-academic-skill', owner: 'TohsakaRIN521', description: 'Academic writing and verification skills for DSH.', url: 'https://github.com/TohsakaRIN521/dsh-academic-skill', stars: 210, language: 'Python', updatedAt: '2026-08-15T03:20:00Z', topics: ['dsh-skill', 'academic'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['skill'] },
+  { id: 102, fullName: 'v587d/dsh-multimodal-skill', name: 'dsh-multimodal-skill', owner: 'v587d', description: 'Multimodal image and audio workflows.', url: 'https://github.com/v587d/dsh-multimodal-skill', stars: 96, language: 'Python', updatedAt: '2026-08-14T23:10:00Z', topics: ['dsh-skill', 'multimodal'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['skill'] },
+  { id: 103, fullName: '2BingLing/dsh-market', name: 'dsh-market', owner: '2BingLing', description: '同时提供 Plugin 与 Skill 的 DSH 生态市场。', url: 'https://github.com/2BingLing/dsh-market', stars: 350, language: 'TypeScript', updatedAt: '2026-08-15T02:10:00Z', topics: ['dsh-plugin', 'dsh-skill', 'market'], defaultBranch: 'master', kind: 'repository', candidateTypes: ['plugin', 'skill'] },
+  { id: 104, fullName: 'nexu-io/open-design', name: 'open-design', owner: 'nexu-io', description: '普通应用仓库，用于演示错误 topic 的无效候选。', url: 'https://github.com/nexu-io/open-design', stars: 28, sizeKb: 1_788_202, language: 'TypeScript', updatedAt: '2026-08-13T12:10:00Z', topics: ['dsh-plugin'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['plugin'] },
+  { id: 105, fullName: 'anywhere-labs/deepseek-harness-desktop', name: 'deepseek-harness-desktop', owner: 'anywhere-labs', description: 'DSH Desktop 原生桌面宿主。', url: 'https://github.com/anywhere-labs/deepseek-harness-desktop', stars: 196, sizeKb: 9_420, language: 'TypeScript', updatedAt: '2026-08-16T08:10:00Z', topics: ['dsh-plugin', 'desktop'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['plugin'] },
+  { id: 200, fullName: 'yjh051108/dsh-routing-suite', name: 'dsh-routing-suite', owner: 'yjh051108', description: '内置路由套件：dsh-super-injector、dsh-mode-boost 插件与 dsh-router-standard 预设，一键安装全部组件。', url: 'https://github.com/yjh051108/dsh-routing-suite', stars: 0, language: null, updatedAt: '2026-08-01T00:00:00Z', topics: ['dsh-plugin', 'dsh-skill'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['plugin', 'skill'], featured: true },
+  { id: 201, fullName: 'yjh051108/dsh-super-injector', name: 'dsh-super-injector', owner: 'yjh051108', description: '插件注入器（routing-suite 子模块）。', url: 'https://github.com/yjh051108/dsh-super-injector', stars: 0, language: null, updatedAt: '2026-08-01T00:00:00Z', topics: ['dsh-plugin'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['plugin'] },
+  { id: 202, fullName: 'yjh051108/dsh-mode-boost', name: 'dsh-mode-boost', owner: 'yjh051108', description: '模式增强（routing-suite 子模块）。', url: 'https://github.com/yjh051108/dsh-mode-boost', stars: 0, language: null, updatedAt: '2026-08-01T00:00:00Z', topics: ['dsh-plugin'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['plugin'] },
+  { id: 203, fullName: 'yjh051108/dsh-router-standard', name: 'dsh-router-standard', owner: 'yjh051108', description: '标准路由预设（routing-suite 子模块）。', url: 'https://github.com/yjh051108/dsh-router-standard', stars: 0, language: null, updatedAt: '2026-08-01T00:00:00Z', topics: ['dsh-skill'], defaultBranch: 'main', kind: 'repository', candidateTypes: ['skill'] },
+]
+
+let demoInstalledSkills: InstalledSkill[] = []
+let demoInstalledApplications: InstalledApplicationAddon[] = [{
+  id: 'dsh-tui-host',
+  name: 'DSH TUI Host',
+  description: '与 DSH TUI Plugin 协同工作的终端应用宿主。',
+  repository: 'ccch1mneyyy/dsh-TUI',
+  provider: 'npm',
+  packageName: '@deepseek-harness-tui/dsh-tui-host',
+  version: '2.3.0',
+  binName: 'dsh-tui',
+  entryPath: 'C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\application-addons\\dsh-tui-host\\index.js',
+  installPath: 'C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\application-addons\\dsh-tui-host',
+  launchMode: 'after-runtime',
+  launchArgs: [],
+  enabled: false,
+  verified: true,
+  provides: ['terminal-host'],
+  installedAt: '2026-08-17T00:00:00.000Z',
+  updatedAt: '2026-08-17T00:00:00.000Z',
+}]
+let demoInstalledPresets: InstalledPreset[] = []
+/** 演示模式下的桌面端样子：假装装了 0.2.0-rc.2、里面有两个外部插件、没配镜像。 */
+let demoDesktopState: DesktopPluginState = {
+  installed: true,
+  version: '0.2.0-rc.2',
+  executable: 'C:\\Demo\\DeepSeek Harness.exe',
+  running: false,
+  registry: null,
+  mirrorRegistry: 'https://registry.npmmirror.com',
+  pluginCount: 2,
+  plugins: [
+    { packageName: 'dsh-session-context-menu', displayName: 'dsh-session-context-menu', version: '0.3.1', description: '会话列表的右键菜单。', enabled: true, builtin: false, locked: false, compatible: true, order: 1 },
+    { packageName: '@demo/desktop-theme', displayName: 'desktop-theme', version: '1.0.4', description: '桌面端外观补丁。', enabled: true, builtin: false, locked: false, compatible: true, order: 2 },
+  ],
+}
+
+let demoDshMarketPlugins: DshMarketCatalog['plugins'] = [
+  { name: 'dsh-explorer', owner: 'No-PRM', url: 'https://github.com/No-PRM/dsh-explorer', category: 'ui', description: { zh: 'Git 优先的文件树侧栏。', en: 'Git-first file tree sidebar.' }, npm: null, stars: 2, added: '2026-08-16', install: 'dsh plugin add github:No-PRM/dsh-explorer', installed: false, enabled: false, version: null, updateAvailable: false, updateVersion: null },
+  { name: 'dsh-message-rail', owner: 'wx-yss', url: 'https://github.com/wx-yss/dsh-message-rail', category: 'ui', description: { zh: '会话消息导航栏。', en: 'Session message navigation rail.' }, npm: 'dsh-message-rail', stars: 2, added: '2026-08-15', install: 'dsh plugin add dsh-message-rail', installed: false, enabled: false, version: null, updateAvailable: false, updateVersion: null },
+  { name: 'dsh-web-mobile', owner: 'mexiaosqwq', url: 'https://github.com/mexiaosqwq/dsh-web-mobile', category: 'ui', description: { zh: '移动端 Web UI 适配。', en: 'Mobile-adaptive Web UI.' }, npm: null, stars: 15, added: '2026-08-15', install: 'dsh plugin add github:mexiaosqwq/dsh-web-mobile', installed: false, enabled: false, version: null, updateAvailable: false, updateVersion: null },
+]
+
+let demoRuntime: RuntimeState = { running: false, pid: null, startedAt: null, url: null, port: null }
+// 演示模式的并发实例：真实主进程里每个包一套运行时，这里只有一套假运行时，
+// 所以除激活包之外的「运行中」只用这个集合记账，够界面演示并发态。
+const demoInstanceRunning = new Set<string>()
+const demoInstanceListeners = new Set<(instances: InstanceSnapshot[]) => void>()
+/** 演示模式也按包记账端口：端口属于实例，不属于全局设置。 */
+const demoInstancePorts = new Map<string, number>()
+function demoPortFor(packId: string): number {
+  const stored = demoInstancePorts.get(packId)
+  if (stored) return stored
+  const index = Math.max(0, demoPacks.findIndex(pack => pack.id === packId))
+  const port = demoSettings.webPort + index
+  demoInstancePorts.set(packId, port)
+  return port
+}
+function demoInstanceSnapshots(): InstanceSnapshot[] {
+  return demoPacks.map(pack => {
+    const running = pack.id === demoSettings.activePackId ? demoRuntime.running || demoInstanceRunning.has(pack.id) : demoInstanceRunning.has(pack.id)
+    const homePath = `${demoSettings.packsRoot}\\${pack.id}`
+    return {
+      packId: pack.id,
+      name: pack.name,
+      homePath,
+      profileName: pack.id,
+      webPort: demoPortFor(pack.id),
+      kernelPath: `${homePath}\\profiles\\node_modules\\.bin\\dsh.cmd`,
+      kernelVersion: pack.dshVersion ?? null,
+      kernelSource: 'pack' as const,
+      biliRoot: homePath,
+      running,
+      pid: running ? demoRuntime.pid ?? 18420 : null,
+      url: running ? demoRuntime.url : null,
+      startedAt: running ? demoRuntime.startedAt : null,
+    }
+  })
+}
+let demoCredential: CredentialStatus = { configured: false }
+let demoCustomApiProviders: CustomApiProvider[] = [{
+  route: 'local-ollama',
+  displayName: 'Local Ollama',
+  baseUrl: 'http://127.0.0.1:11434/v1',
+  protocol: 'openai-completions',
+  modelIds: ['qwen3:8b'],
+  credentialName: null,
+  hasApiKey: false,
+}]
+let demoGitHubAuth: GitHubAuthStatus = {
+  authenticated: false,
+  login: null,
+  name: null,
+  avatarUrl: null,
+  scopes: [],
+  method: null,
+  oauthAvailable: true,
+  rateLimit: null,
+}
+const demoStarredRepositories = new Set<string>()
+let demoDshInstallation: DshInstallationStatus = { installed: false, version: null, executable: null, source: null }
+const demoRemoteDshVersion = '0.1.5-rc.2'
+/** demo：镜像上游真实状态——版本号最高的 0.1.6-alpha.1 标「最新版」，推荐的安装版本是同渠道最新的 0.1.5-rc.2。 */
+const demoDshCandidates: RuntimeVersionCandidate[] = [
+  { version: '0.1.6-alpha.1', label: 'alpha', lts: null, date: '2026-09-15T00:00:00.000Z', prerelease: true, isNewest: true },
+  { version: '0.1.5-rc.2', label: 'next', lts: null, date: '2026-09-10T00:00:00.000Z', prerelease: true, recommended: true },
+  { version: '0.1.5-rc.1', label: 'latest', lts: null, date: '2026-09-10T00:00:00.000Z', prerelease: true },
+]
+let demoDshVersions: RuntimeEnvironmentState['dshInstalled'] = [
+  { version: '0.1.5-rc.1', root: 'C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\dsh-runtime\\versions\\0.1.5-rc.1', executable: 'C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\dsh-runtime\\versions\\0.1.5-rc.1\\node_modules\\.bin\\dsh.cmd', source: 'launcher', selected: true, removable: true },
+  { version: '0.1.3-alpha.2', root: 'C:\\Users\\demo\\.dsh-runtime', executable: 'C:\\Users\\demo\\.dsh-runtime\\node_modules\\.bin\\dsh.cmd', source: 'legacy', selected: false, removable: true },
+]
+let demoNodeVersions: RuntimeEnvironmentState['nodeInstalled'] = [
+  { version: 'system', root: 'C:\\Program Files\\nodejs', executable: 'C:\\Program Files\\nodejs\\node.exe', source: 'system', selected: true, removable: false },
+]
+/** demo：置 true 可模拟「发现启动器新版本」，验证自更新 UI 与进度条。 */
+let demoLauncherUpdateAvailable = false
+const demoLauncherVersion = '0.1.9'
+let demoOnLauncherUpdateProgress: ((progress: LauncherUpdateProgress) => void) | null = null
+const outputListeners = new Set<(output: RuntimeOutput) => void>()
+const stateListeners = new Set<(state: RuntimeState) => void>()
+const installProgressListeners = new Set<(progress: InstallProgress) => void>()
+const catalogAnalysisProgressListeners = new Set<(progress: CatalogAnalysisProgress) => void>()
+const pluginTrialListeners = new Set<(result: PluginTrialResult) => void>()
+const aiEventListeners = new Set<(event: AiInstallEvent) => void>()
+const aiSessionEventListeners = new Set<(event: AiSessionEvent) => void>()
+const packProgressListeners = new Set<(event: PackProgressEvent) => void>()
+
+function emitPackProgress(event: PackProgressEvent): void {
+  for (const listener of packProgressListeners) listener(event)
+}
+const dshMarketProgressListeners = new Set<(progress: DshMarketProgress) => void>()
+
+function demoDshMarketCatalog(): DshMarketCatalog {
+  return {
+    updated: '2026-08-16',
+    count: demoDshMarketPlugins.length,
+    categories: { ui: { zh: 'UI 增强', en: 'UI Enhancements' } },
+    plugins: demoDshMarketPlugins.map(plugin => ({ ...plugin, description: { ...plugin.description } })),
+  }
+}
+
+function dshMarketRepository(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname.toLowerCase() !== 'github.com') return null
+    const parts = parsed.pathname.split('/').filter(Boolean)
+    if (parts.length < 2) return null
+    return `${parts[0]}/${parts[1]}`.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function marketMatchesDemoPlugin(market: DshMarketCatalog['plugins'][number], plugin: ManagedPlugin): boolean {
+  const repository = dshMarketRepository(market.url)
+  return (repository !== null && plugin.repositoryFullName?.toLowerCase() === repository)
+    || (market.npm !== null && plugin.packageName.toLowerCase() === market.npm.toLowerCase())
+    || plugin.packageName.toLowerCase() === market.name.toLowerCase()
+}
+
+function syncDemoMarketPluginState(plugin: ManagedPlugin): void {
+  const market = demoDshMarketPlugins.find(item => marketMatchesDemoPlugin(item, plugin))
+  if (market?.installed) market.enabled = plugin.enabled
+}
+
+function syncDemoPluginStateFromMarket(market: DshMarketCatalog['plugins'][number]): void {
+  demoPlugins = renumber(demoPlugins.map(plugin => marketMatchesDemoPlugin(market, plugin)
+    ? { ...plugin, enabled: market.enabled }
+    : plugin))
+}
+
+function upsertDemoPluginFromMarket(market: DshMarketCatalog['plugins'][number]): void {
+  const repository = dshMarketRepository(market.url)
+  const packageName = market.npm ?? market.name
+  const existing = demoPlugins.findIndex(plugin => marketMatchesDemoPlugin(market, plugin))
+  const next: ManagedPlugin = {
+    packageName,
+    displayName: market.name,
+    version: market.version ?? '1.0.0',
+    description: market.description.zh ?? market.description.en ?? '来自 DSH Market 的插件。',
+    repository: market.url,
+    repositoryFullName: repository ?? undefined,
+    enabled: market.enabled,
+    builtin: false,
+    locked: false,
+    compatible: true,
+    order: null,
+  }
+  demoPlugins = existing >= 0
+    ? demoPlugins.map((plugin, index) => index === existing ? { ...plugin, ...next } : plugin)
+    : renumber([...demoPlugins, next])
+}
+
+function removeDemoPluginFromMarket(market: DshMarketCatalog['plugins'][number]): void {
+  demoPlugins = renumber(demoPlugins.filter(plugin => !marketMatchesDemoPlugin(market, plugin)))
+}
+
+let demoPacks: PackStatus[] = [
+  {
+    id: 'pack-web-basic',
+    name: 'Web 基础包',
+    description: 'Web 工作台 + UI 集合，日常使用的基础组合。',
+    version: '1.0.0',
+    dshVersion: '0.1.5-rc.1',
+    // 对应真实用户机器上那个迁移进来的 `web` 包：装启动器之前就用 dsh 命令跑过。
+    // 演示环境里留一个，「命令行部署」徽标才看得见。
+    native: true,
+    source: 'created',
+    enabled: true,
+    state: 'complete',
+    plugins: [
+      { packageName: '@deepseek-ai/dsh-base', enabled: true },
+      { packageName: '@deepseek-ai/dsh-web-app', enabled: true },
+      { packageName: '@zhu1090093659/dsh-web-ui', enabled: true },
+    ],
+    // 主进程在 packs:list 里现算的几个数；演示环境给一组固定值，界面才有徽章与「· 附件 N」。
+    vaultCount: 3,
+    remoteCount: 2,
+    moveCount: 0,
+    extrasCount: 3,
+    installedAt: '2026-08-10T08:00:00Z',
+    updatedAt: '2026-08-12T10:30:00Z',
+  },
+  {
+    id: 'pack-cc-tui',
+    name: 'CC TUI 终端包',
+    description: '终端交互界面专用组合。',
+    version: '0.9.0',
+    dshVersion: '0.1.5-rc.1',
+    source: 'zip',
+    enabled: false,
+    state: 'complete',
+    plugins: [
+      { packageName: '@deepseek-harness-tui/dsh-tui', enabled: false },
+      { packageName: '@deepseek-ai/dsh-base', enabled: true },
+    ],
+    vaultCount: 1,
+    remoteCount: 1,
+    moveCount: 1,
+    extrasCount: 0,
+    installedAt: '2026-08-11T14:00:00Z',
+    updatedAt: '2026-08-11T14:00:00Z',
+  },
+  {
+    id: 'pack-0-1-5-rc-1',
+    name: '0.1.5-rc.1',
+    description: '',
+    version: '1.0.0',
+    dshVersion: '0.1.5-rc.1',
+    source: 'created',
+    enabled: false,
+    state: 'complete',
+    plugins: [],
+    installedAt: '2026-08-12T12:00:00Z',
+    updatedAt: '2026-08-12T12:00:00Z',
+  },
+  {
+    id: 'pack-official-0-1-1',
+    name: '官方默认整合包 0.1.1',
+    description: '官方默认整合包：Web 全家桶 + Office 文档技能 + 去 AI 味写作技能。',
+    version: '1.0.0',
+    dshVersion: '0.1.2-rc.1',
+    officialVersion: '0.1.1',
+    source: 'snapshot',
+    enabled: false,
+    state: 'complete',
+    plugins: [{ packageName: '@linxin666/dsh-web-all', enabled: true }],
+    skills: [
+      { name: 'humanizer-zh', format: 'bundle', enabled: true },
+      { name: 'find-skills', format: 'bundle', enabled: true },
+    ],
+    installedAt: '2026-09-09T10:00:00Z',
+    updatedAt: '2026-09-09T10:00:00Z',
+  },
+]
+
+/** demo：Release 上的官方默认整合包版本（降序，第一项即推荐版本）。 */
+const demoOfficialReleases: OfficialPackRelease[] = [
+  {
+    version: '0.1.5-rc.2.1',
+    dshVersion: '0.1.5-rc.2',
+    assetName: 'official-pack-v0.1.5-rc.2.1.zip',
+    assetUrl: 'https://github.com/Miyazawai/DSH-Melody-Launcher-Overture/releases/download/v0.1.2/official-pack-v0.1.5-rc.2.1.zip',
+    size: 179_182_200,
+    releaseTag: 'v0.1.2',
+    publishedAt: '2026-09-15T16:00:00Z',
+    notes: 'web-all: 0.3.22\nofficecli: v0.2.1\ndsh: 0.1.5-rc.2',
+  },
+  {
+    version: '0.1.2-rc.1.1',
+    dshVersion: '0.1.2-rc.1',
+    assetName: 'official-pack-v0.1.2-rc.1.1.zip',
+    assetUrl: 'https://github.com/Miyazawai/DSH-Melody-Launcher-Overture/releases/download/v0.1.1/official-pack-v0.1.2-rc.1.1.zip',
+    size: 141_557_760,
+    releaseTag: 'v0.1.1',
+    publishedAt: '2026-09-09T09:00:00Z',
+    notes: 'web-all: 0.3.18\nofficecli: v0.2.0\ndsh: 0.1.2-rc.1',
+  },
+  {
+    // 旧命名的历史资产：资产名没编码 DSH 版本、Release 正文也没有构建元信息 → 真的不知道。
+    // 渲染层会拿本机已装这个包的真实绑定版本（0.1.2-rc.1）补上；没装过则显示「未标注」。
+    version: '0.1.1',
+    dshVersion: null,
+    assetName: 'official-pack-v0.1.1.zip',
+    assetUrl: 'https://github.com/Miyazawai/DSH-Melody-Launcher-Overture/releases/download/v0.1.1/official-pack-v0.1.1.zip',
+    size: 128_083_171,
+    releaseTag: 'v0.1.1',
+    publishedAt: '2026-09-09T10:44:30Z',
+    notes: null,
+  },
+]
+let demoAiStatus: AiInstallStatus = { phase: 'idle', repository: null, taskKind: 'repository-install', subject: null, startedAt: null, sessionId: null, message: '' }
+const demoPluginTrials = new Map<string, PluginTrialResult>()
+let demoAiResolve: ((allow: boolean) => void) | null = null
+let demoAiCancelled = false
+let demoAiSessions: AiSession[] = []
+
+function emitDemoSession(event: AiSessionEvent): void {
+  aiSessionEventListeners.forEach(listener => listener(event))
+}
+
+function demoSession(input: AiSessionCreateInput = {}): AiSession {
+  const timestamp = new Date().toISOString()
+  const session: AiSession = {
+    id: `demo-copilot-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    kind: input.kind ?? 'chat',
+    title: input.title ?? (input.kind === 'repository-install' ? 'AI 尝试安装' : '新对话'),
+    subject: input.subject ?? null,
+    phase: 'idle',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    queue: { position: null, total: 0, running: false, mutating: false },
+    messageCount: 0,
+    pendingApproval: null,
+    hasSnapshot: false,
+    messages: [],
+  }
+  demoAiSessions = [session, ...demoAiSessions]
+  emitDemoSession({ kind: 'session-created', session })
+  return session
+}
+
+function emitAiEvent(event: AiInstallEvent): void {
+  aiEventListeners.forEach(listener => listener(event))
+}
+
+function setDemoAiStatus(partial: Partial<AiInstallStatus>): void {
+  demoAiStatus = { ...demoAiStatus, ...partial }
+  emitAiEvent({ kind: 'status', status: demoAiStatus })
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, milliseconds))
+}
+
+async function demoAnalyzeCatalogRepository(
+  fullName: string,
+  defaultBranch: string,
+): Promise<CatalogRepositoryAnalysis> {
+  const checks: CatalogAnalysisProgress['checks'] = {
+    plugin: 'pending',
+    skill: 'pending',
+    application: 'pending',
+  }
+  const emit = (phase: CatalogAnalysisProgress['phase'], message: string) => {
+    catalogAnalysisProgressListeners.forEach(listener => listener({
+      repository: fullName,
+      phase,
+      message,
+      completed: Object.values(checks).filter(state => state === 'complete' || state === 'failed').length,
+      total: 3,
+      checks: { ...checks },
+    }))
+  }
+
+  emit('preparing', '正在准备仓库结构检测')
+  await wait(120)
+  checks.plugin = 'running'
+  checks.skill = 'running'
+  checks.application = 'running'
+  emit('checking', '正在检查 Plugin、Skill、应用加载项')
+
+  const completeCheck = async (delay: number, check: keyof typeof checks, message: string) => {
+    await wait(delay)
+    checks[check] = 'complete'
+    emit('checking', message)
+  }
+  await Promise.all([
+    completeCheck(320, 'plugin', 'Plugin 检查完成，正在等待 Skill、应用加载项'),
+    completeCheck(620, 'skill', 'Plugin、Skill 检查完成，正在等待应用加载项'),
+    completeCheck(900, 'application', '结构检查已完成'),
+  ])
+  emit('classifying', '正在汇总资源类型和安装入口')
+  await wait(180)
+  const result = demoCatalogAnalysis(fullName, defaultBranch)
+  emit('complete', '资源检测完成')
+  return result
+}
+
+function profile(): ProfileState {
+  return {
+    initialized: true,
+    profileDir: `${demoSettings.dshHome}\\profiles\\${demoSettings.profileName}`,
+    manifestPath: `${demoSettings.dshHome}\\profiles\\${demoSettings.profileName}\\package.json`,
+    plugins: demoPlugins,
+    activeBundles: demoPlugins.filter(plugin => plugin.enabled).map(plugin => plugin.packageName),
+    dependencyCount: demoPlugins.filter(plugin => !plugin.builtin).length,
+    disabledCount: demoPlugins.filter(plugin => !plugin.enabled).length,
+  }
+}
+
+function renumber(plugins: ManagedPlugin[]): ManagedPlugin[] {
+  let order = 0
+  return plugins.map(plugin => ({ ...plugin, order: plugin.enabled ? ++order : null }))
+}
+
+function demoAnalysis(fullName: string, defaultBranch: string): RepositoryAnalysis {
+  const repo = demoRepositories.find(item => item.fullName === fullName)
+  if (fullName === 'nexu-io/open-design') {
+    return { repository: fullName, defaultBranch, installability: 'application', summary: '这是独立应用，不是可加载的 DSH Plugin。', targets: [] }
+  }
+  if (repo?.candidateTypes.length === 1 && repo.candidateTypes[0] === 'skill') {
+    return { repository: fullName, defaultBranch, installability: 'invalid', summary: '没有找到 Cordis Bundle 清单。', targets: [] }
+  }
+  const packageName = fullName === 'liustack/modlens'
+      ? '@liustack/modlens'
+      : fullName === 'ccch1mneyyy/dsh-TUI'
+        ? '@deepseek-harness-tui/dsh-tui'
+        : fullName === 'anywhere-labs/deepseek-harness-desktop'
+          ? 'dsh-plugin-desktop'
+        : fullName === 'omdsh-dev/DSH-better-sidebar'
+        ? 'dsh-better-sidebar'
+        : `@${repo?.owner ?? 'demo'}/${(repo?.name ?? 'plugin').toLowerCase()}`
+  return {
+    repository: fullName,
+    defaultBranch,
+    installability: 'ready',
+    summary: `检测到可安装的 ${packageName}。`,
+    targets: [{
+      id: `${packageName}:.`,
+      packageName,
+      version: '1.0.0',
+      source: 'npm',
+      profileName: packageName === '@deepseek-harness-tui/dsh-tui' ? 'cc-tui' : 'web',
+      platform: packageName === '@deepseek-harness-tui/dsh-tui' ? 'terminal' : 'web',
+      subdirectory: null,
+      commit: 'a'.repeat(40),
+      requiresBuild: false,
+      buildScripts: [],
+      nodeRange: '>=22.19',
+    }],
+  }
+}
+
+function demoSkillAnalysis(fullName: string, defaultBranch: string): SkillRepositoryAnalysis {
+  const repo = demoRepositories.find(item => item.fullName === fullName)
+  if (!repo?.candidateTypes.includes('skill')) {
+    return { repository: fullName, defaultBranch, installability: 'invalid', summary: '没有找到符合 DSH 规范的 SKILL.md 或单文件 Skill。', targets: [] }
+  }
+  const names = fullName.includes('academic')
+    ? ['academic-paper-completion', 'skill-optimizer']
+    : fullName === '2BingLing/dsh-market'
+      ? ['dsh-market-guide']
+      : fullName === 'yjh051108/dsh-router-standard'
+        ? ['router-standard']
+        : ['multimodal-workflow']
+  return {
+    repository: fullName,
+    defaultBranch,
+    installability: names.length > 1 ? 'choice' : 'ready',
+    summary: names.length > 1 ? `确认包含 ${names.length} 个有效 DSH Skills。` : `确认是 DSH Skill：${names[0]}`,
+    targets: names.map(name => ({
+      id: `${name}:${name}/SKILL.md`,
+      name,
+      description: `Reusable instructions for ${name}.`,
+      sourcePath: `${name}/SKILL.md`,
+      format: 'bundle',
+      revision: defaultBranch,
+      modelInvocable: true,
+      userInvocable: true,
+    })),
+  }
+}
+
+function demoApplicationAnalysis(fullName: string, defaultBranch: string): ApplicationRepositoryAnalysis {
+  if (fullName !== 'anywhere-labs/deepseek-harness-desktop') {
+    return { repository: fullName, defaultBranch, installability: 'invalid', summary: '没有找到 .dsh-launcher/addon.json 应用加载项清单。', targets: [] }
+  }
+  return {
+    repository: fullName,
+    defaultBranch,
+    installability: 'ready',
+    summary: '检测到 DSH Desktop 独立宿主，将作为应用加载项安装，不会写入 Web 整合包。',
+    targets: [{
+      id: 'dsh-desktop:.',
+      addonId: 'dsh-desktop',
+      name: 'DSH Desktop',
+      description: '为 DeepSeek Harness 提供原生窗口、托盘、终端与桌面运行时服务。',
+      provider: 'npm',
+      packageName: 'dsh-plugin-desktop',
+      version: '2.0.0',
+      binName: 'dsh-plugin-desktop',
+      launchMode: 'runtime-replacement',
+      launchArgs: [],
+      platforms: ['win32', 'darwin', 'linux'],
+      supported: true,
+      verified: true,
+      provides: ['desktopRuntime', 'desktopProfiles', 'desktopPnpmBootstrap'],
+    }],
+  }
+}
+
+function demoCatalogAnalysis(fullName: string, defaultBranch: string): CatalogRepositoryAnalysis {
+  if (fullName === 'deepseek-ai/deepseek-harness') {
+    return {
+      repository: fullName,
+      defaultBranch,
+      kind: 'dsh',
+      componentKinds: [],
+      summary: '这是 DeepSeek Harness 官方仓库，将作为 DSH 本体安装。',
+      pluginAnalysis: null,
+      skillAnalysis: null,
+      applicationAnalysis: null,
+      warnings: [],
+    }
+  }
+  if (fullName === 'yjh051108/dsh-routing-suite') {
+    // 与真实 meta-repo 分析一致：super-injector 走 Release tgz；mode-boost 无 dsh 元数据（官方脚本不装）；
+    // router-standard 是 agent-preset 而非 skill（preset/ 目录）。
+    const pluginTargets: PluginInstallTarget[] = [
+      {
+        id: '@yjh051108/dsh-super-injector:.',
+        packageName: '@yjh051108/dsh-super-injector',
+        version: '0.3.3',
+        source: 'release',
+        profileName: 'web',
+        platform: 'web',
+        subdirectory: null,
+        commit: 'c'.repeat(40),
+        requiresBuild: false,
+        buildScripts: [],
+        nodeRange: null,
+        sourceRepository: 'yjh051108/dsh-super-injector',
+        tarballUrl: 'https://github.com/yjh051108/dsh-super-injector/releases/download/v0.3.3/dsh-super-injector-0.3.3.tgz',
+      },
+    ]
+    const skillTargets: SkillInstallTarget[] = []
+    const presetTargets: PresetInstallTarget[] = [
+      {
+        id: 'router-standard:preset/router-standard',
+        name: 'router-standard',
+        description: 'Standard routing agent preset（含 preset.yml 的 DSH 预设目录）。',
+        sourceRepository: 'yjh051108/dsh-router-standard',
+        revision: 'e'.repeat(40),
+        sourcePath: 'preset/router-standard',
+      },
+      {
+        id: 'router-spec:preset/router-spec',
+        name: 'router-spec',
+        description: 'Routing spec agent preset（含 preset.yml 的 DSH 预设目录）。',
+        sourceRepository: 'yjh051108/dsh-router-standard',
+        revision: 'e'.repeat(40),
+        sourcePath: 'preset/router-spec',
+      },
+    ]
+    return {
+      repository: fullName,
+      defaultBranch,
+      kind: 'hybrid',
+      componentKinds: ['plugin', 'preset'],
+      summary: `确认包含 ${pluginTargets.length} 个 Plugin 组件和 ${presetTargets.length} 个 Agent 预设。`,
+      pluginAnalysis: {
+        repository: fullName,
+        defaultBranch,
+        installability: 'ready',
+        summary: `检测到 ${pluginTargets.length} 个可安装 Plugin 组件。`,
+        targets: pluginTargets,
+      },
+      skillAnalysis: {
+        repository: fullName,
+        defaultBranch,
+        installability: 'invalid',
+        summary: '未在子模块中检测到 Skill 组件。',
+        targets: skillTargets,
+      },
+      applicationAnalysis: null,
+      presetAnalysis: {
+        repository: fullName,
+        defaultBranch,
+        installability: 'ready',
+        summary: `检测到 ${presetTargets.length} 个可安装 Agent 预设。`,
+        targets: presetTargets,
+      },
+      warnings: [],
+    }
+  }
+  const pluginAnalysis = demoAnalysis(fullName, defaultBranch)
+  const skillAnalysis = demoSkillAnalysis(fullName, defaultBranch)
+  const applicationAnalysis = demoApplicationAnalysis(fullName, defaultBranch)
+  const plugin = ['ready', 'choice', 'dynamic'].includes(pluginAnalysis.installability)
+  const skill = ['ready', 'choice'].includes(skillAnalysis.installability)
+  const application = ['ready', 'choice', 'unsupported'].includes(applicationAnalysis.installability)
+  const componentKinds = [plugin ? 'plugin' : null, skill ? 'skill' : null, application ? 'application' : null]
+    .filter((kind): kind is 'plugin' | 'skill' | 'application' => kind !== null)
+  const kind = componentKinds.length > 1 ? 'hybrid' : componentKinds[0] ?? 'invalid'
+  return {
+    repository: fullName,
+    defaultBranch,
+    kind,
+    componentKinds,
+    summary: kind === 'hybrid'
+      ? `确认包含 ${pluginAnalysis.targets.length} 个 Plugin 组件和 ${skillAnalysis.targets.length} 个 Skill 组件。`
+      : kind === 'plugin'
+        ? pluginAnalysis.summary
+        : kind === 'skill'
+          ? skillAnalysis.summary
+          : kind === 'application'
+            ? applicationAnalysis.summary
+            : '没有找到符合 DSH 规范的 Plugin、Skill 或应用加载项。',
+    pluginAnalysis,
+    skillAnalysis,
+    applicationAnalysis,
+    warnings: [],
+  }
+}
+
+/** 浏览器演示用的 skills.sh 索引切片（安装量为虚构值），供截图与离线体验。 */
+const DEMO_SKILLS_SH_INDEX: SkillsShSkill[] = [
+  { id: 'anthropics/skills/pdf', skillId: 'pdf', name: 'pdf', installs: 189038, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/docx', skillId: 'docx', name: 'docx', installs: 96420, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/xlsx', skillId: 'xlsx', name: 'xlsx', installs: 88210, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/pptx', skillId: 'pptx', name: 'pptx', installs: 71550, source: 'anthropics/skills' },
+  { id: 'obra/superpowers/brainstorming', skillId: 'brainstorming', name: 'brainstorming', installs: 64300, source: 'obra/superpowers' },
+  { id: 'anthropics/skills/skill-creator', skillId: 'skill-creator', name: 'skill-creator', installs: 58970, source: 'anthropics/skills' },
+  { id: 'vercel-labs/skills/find-skills', skillId: 'find-skills', name: 'find-skills', installs: 52140, source: 'vercel-labs/skills' },
+  { id: 'obra/superpowers/writing-plans', skillId: 'writing-plans', name: 'writing-plans', installs: 47820, source: 'obra/superpowers' },
+  { id: 'obra/superpowers/test-driven-development', skillId: 'test-driven-development', name: 'test-driven-development', installs: 44100, source: 'obra/superpowers' },
+  { id: 'anthropics/skills/frontend-design', skillId: 'frontend-design', name: 'frontend-design', installs: 41260, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/webapp-testing', skillId: 'webapp-testing', name: 'webapp-testing', installs: 38710, source: 'anthropics/skills' },
+  { id: 'obra/superpowers/systematic-debugging', skillId: 'systematic-debugging', name: 'systematic-debugging', installs: 35280, source: 'obra/superpowers' },
+  { id: 'anthropics/skills/mcp-builder', skillId: 'mcp-builder', name: 'mcp-builder', installs: 33900, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/canvas-design', skillId: 'canvas-design', name: 'canvas-design', installs: 31450, source: 'anthropics/skills' },
+  { id: 'mattpocock/skills/tdd', skillId: 'tdd', name: 'tdd', installs: 28760, source: 'mattpocock/skills' },
+  { id: 'mattpocock/skills/grill-me', skillId: 'grill-me', name: 'grill-me', installs: 26310, source: 'mattpocock/skills' },
+  { id: 'anthropics/skills/brand-guidelines', skillId: 'brand-guidelines', name: 'brand-guidelines', installs: 24050, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/internal-comms', skillId: 'internal-comms', name: 'internal-comms', installs: 21870, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/doc-coauthoring', skillId: 'doc-coauthoring', name: 'doc-coauthoring', installs: 19940, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/theme-factory', skillId: 'theme-factory', name: 'theme-factory', installs: 18320, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/algorithmic-art', skillId: 'algorithmic-art', name: 'algorithmic-art', installs: 16480, source: 'anthropics/skills' },
+  { id: 'anthropics/skills/slack-gif-creator', skillId: 'slack-gif-creator', name: 'slack-gif-creator', installs: 14930, source: 'anthropics/skills' },
+  { id: 'obra/superpowers/executing-plans', skillId: 'executing-plans', name: 'executing-plans', installs: 13260, source: 'obra/superpowers' },
+  { id: 'obra/superpowers/requesting-code-review', skillId: 'requesting-code-review', name: 'requesting-code-review', installs: 11840, source: 'obra/superpowers' },
+  { id: 'vercel-labs/json-render/react-pdf', skillId: 'react-pdf', name: 'react-pdf', installs: 10250, source: 'vercel-labs/json-render' },
+  { id: 'firebase/agent-skills/firebase-security-rules', skillId: 'firebase-security-rules', name: 'firebase-security-rules', installs: 9310, source: 'firebase/agent-skills' },
+  { id: 'firebase/agent-skills/firebase-firestore', skillId: 'firebase-firestore', name: 'firebase-firestore', installs: 8720, source: 'firebase/agent-skills' },
+  { id: 'anthropics/skills/web-artifacts-builder', skillId: 'web-artifacts-builder', name: 'web-artifacts-builder', installs: 7940, source: 'anthropics/skills' },
+  { id: 'shadcn/ui/shadcn', skillId: 'shadcn', name: 'shadcn', installs: 6850, source: 'shadcn/ui' },
+  { id: 'emilkowalski/skills/motion', skillId: 'motion', name: 'motion', installs: 5230, source: 'emilkowalski/skills' },
+  { id: 'anthropics/skills/claude-api', skillId: 'claude-api', name: 'claude-api', installs: 4680, source: 'anthropics/skills' },
+  { id: 'coreyhaines31/marketingskills/seo-audit', skillId: 'seo-audit', name: 'seo-audit', installs: 3120, source: 'coreyhaines31/marketingskills' },
+]
+
+/** 演示数据里的会话搬运预览：数字是编的，形状与真机一致。 */
+function demoSessionImportPreview(sourcePackId: string, targetPackId: string) {
+  const source = demoPacks.find(item => item.id === sourcePackId)
+  const target = demoPacks.find(item => item.id === targetPackId)
+  if (!source || !target) throw new Error('整合包不存在。')
+  if (sourcePackId === targetPackId) throw new Error('源包和目标包是同一个，没有可搬的记录。')
+  return {
+    sourcePackId,
+    targetPackId,
+    sourceName: source.name,
+    targetName: target.name,
+    importableCount: 2,
+    importableBytes: 460_800,
+    extraBytes: 1_240_000,
+    skipped: [{ reason: 'missing-cwd', count: 1, label: '会话对应的工作目录已经不在了，DSH 不会显示它' }],
+    formatUnverified: false,
+    dangling: { presets: ['study'], plugins: [] },
+  }
+}
+
+export const demoApi: LauncherApi = {
+  getSettings: async () => demoSettings,
+  saveSettings: async settings => (demoSettings = settings),
+  detectDshInstallation: async () => ({ ...demoDshInstallation }),
+  readRuntimeEnvironment: async (): Promise<RuntimeEnvironmentState> => ({
+    dshRoot: demoSettings.dshInstallPath,
+    nodeRoot: 'C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\node-runtime',
+    dshSelectedVersion: demoSettings.dshVersion ?? null,
+    nodeSelectedVersion: demoSettings.nodeVersion ?? null,
+    dshInstalled: demoDshVersions,
+    nodeInstalled: demoNodeVersions,
+    dshAvailable: demoDshCandidates,
+  }),
+  installDshVersion: async version => {
+    const normalized = version.replace(/^v/i, '')
+    const item = { version: normalized, root: `${demoSettings.dshInstallPath}\\versions\\${normalized}`, executable: `${demoSettings.dshInstallPath}\\versions\\${normalized}\\node_modules\\.bin\\dsh.cmd`, source: 'launcher' as const, selected: true, removable: true }
+    demoDshVersions = demoDshVersions.map(entry => ({ ...entry, selected: false, removable: true })).filter(entry => entry.version !== normalized)
+    demoDshVersions.push(item)
+    // 与主进程一致：已有激活包绑版本时，下载新版本不抢「当前」。
+    if (!demoSettings.activePackId || !demoSettings.dshVersion) {
+      demoSettings = { ...demoSettings, dshVersion: normalized, launchExecutable: item.executable, launchArgs: ['web'] }
+    }
+    demoDshInstallation = { installed: true, version: normalized, executable: item.executable, source: 'launcher' }
+    return demoApi.readRuntimeEnvironment()
+  },
+  selectDshVersion: async version => {
+    const item = demoDshVersions.find(entry => entry.version === version.replace(/^v/i, ''))
+    if (!item) throw new Error('DSH 版本尚未安装。')
+    demoDshVersions = demoDshVersions.map(entry => ({ ...entry, selected: entry.version === item.version, removable: entry.version !== item.version }))
+    demoSettings = { ...demoSettings, dshVersion: item.version, launchExecutable: item.executable, launchArgs: ['web'] }
+    return demoApi.readRuntimeEnvironment()
+  },
+  removeDshVersion: async version => {
+    const normalized = version.replace(/^v/i, '')
+    const wasCurrent = demoSettings.dshVersion === normalized
+    demoDshVersions = demoDshVersions.filter(entry => entry.version !== normalized)
+    if (wasCurrent) {
+      // 与主进程一致：卸载当前版本后自动落到剩余最新托管版本，没有就清空。
+      const fallback = [...demoDshVersions].reverse().find(entry => entry.source === 'launcher') ?? null
+      demoDshVersions = demoDshVersions.map(entry => ({ ...entry, selected: entry.version === fallback?.version, removable: true }))
+      demoSettings = fallback
+        ? { ...demoSettings, dshVersion: fallback.version, launchExecutable: fallback.executable, launchArgs: ['web'] }
+        : { ...demoSettings, dshVersion: null }
+      demoDshInstallation = fallback
+        ? { installed: true, version: fallback.version, executable: fallback.executable, source: 'launcher' }
+        : { installed: false, version: null, executable: null, source: null }
+    }
+    return demoApi.readRuntimeEnvironment()
+  },
+  installNodeVersion: async version => {
+    const normalized = version.startsWith('v') ? version : `v${version}`
+    demoNodeVersions = demoNodeVersions.filter(entry => entry.version !== normalized && entry.version !== 'system')
+    demoNodeVersions.push({ version: normalized, root: `C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\node-runtime\\versions\\${normalized}`, executable: `C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\node-runtime\\versions\\${normalized}\\node.exe`, source: 'launcher', selected: true, removable: false })
+    demoNodeVersions = demoNodeVersions.map(entry => ({ ...entry, selected: entry.version === normalized, removable: entry.version !== normalized && entry.source === 'launcher' }))
+    demoSettings = { ...demoSettings, nodeVersion: normalized }
+    return demoApi.readRuntimeEnvironment()
+  },
+  selectNodeVersion: async version => {
+    const normalized = version === null || version === 'system' ? null : (version.startsWith('v') ? version : `v${version}`)
+    if (normalized && !demoNodeVersions.some(entry => entry.version === normalized)) throw new Error('Node.js 版本尚未安装。')
+    demoSettings = { ...demoSettings, nodeVersion: normalized }
+    demoNodeVersions = demoNodeVersions.map(entry => ({ ...entry, selected: normalized === null ? entry.version === 'system' : entry.version === normalized, removable: entry.source === 'launcher' && entry.version !== normalized }))
+    return demoApi.readRuntimeEnvironment()
+  },
+  removeNodeVersion: async version => {
+    if (demoSettings.nodeVersion === version) throw new Error('当前 Node.js 版本不能删除。')
+    demoNodeVersions = demoNodeVersions.filter(entry => entry.version !== version)
+    return demoApi.readRuntimeEnvironment()
+  },
+  cancelRuntimeEnvironmentOperation: async () => undefined,
+  openDshFolder: async () => undefined,
+  openNodeFolder: async () => undefined,
+  checkDshUpdate: async (): Promise<DshUpdateStatus> => {
+    const localVersion = demoDshInstallation.version
+    if (!demoDshInstallation.installed || !localVersion) {
+      return {
+        state: 'not-installed',
+        localVersion,
+        remoteVersion: null,
+        repository: 'deepseek-ai/deepseek-harness',
+        checkedAt: new Date().toISOString(),
+        message: '尚未安装 DSH。',
+      }
+    }
+    const available = localVersion !== demoRemoteDshVersion
+    return {
+      state: available ? 'update-available' : 'up-to-date',
+      localVersion,
+      remoteVersion: demoRemoteDshVersion,
+      repository: 'deepseek-ai/deepseek-harness',
+      checkedAt: new Date().toISOString(),
+      message: available ? `发现 DSH 新版本 ${demoRemoteDshVersion}。` : '当前 DSH 已是最新版本。',
+    }
+  },
+  checkLauncherUpdate: async (): Promise<LauncherUpdateStatus> => {
+    const remoteVersion = demoLauncherUpdateAvailable ? '0.1.10' : demoLauncherVersion
+    const available = remoteVersion !== demoLauncherVersion
+    return {
+      state: available ? 'update-available' : 'up-to-date',
+      localVersion: demoLauncherVersion,
+      remoteVersion,
+      releaseUrl: 'https://github.com/rirko/dsh-melody-launcher/releases/latest',
+      assetName: `DSH-Launcher-${remoteVersion}-portable.exe`,
+      assetSize: available ? 95_731_397 : null,
+      checkedAt: new Date().toISOString(),
+      message: available ? `发现启动器新版本 ${remoteVersion}。` : '启动器已是最新版本。',
+    }
+  },
+  downloadLauncherUpdate: async (): Promise<LauncherUpdateStatus> => {
+    const status: LauncherUpdateStatus = {
+      state: 'downloading',
+      localVersion: demoLauncherVersion,
+      remoteVersion: '0.1.10',
+      releaseUrl: 'https://github.com/rirko/dsh-melody-launcher/releases/latest',
+      assetName: 'DSH-Launcher-0.1.10-portable.exe',
+      assetSize: 95_731_397,
+      checkedAt: new Date().toISOString(),
+      message: '正在下载启动器新版本…',
+    }
+    const progress: LauncherUpdateProgress = { phase: 'downloading', percent: 100, downloadedBytes: 95_731_397, totalBytes: 95_731_397 }
+    demoOnLauncherUpdateProgress?.(progress)
+    return status
+  },
+  applyLauncherUpdate: async (): Promise<void> => {
+    // demo 模式不真正替换可执行文件，仅提示已模拟。
+    return
+  },
+  onLauncherUpdateProgress: listener => {
+    demoOnLauncherUpdateProgress = listener
+    return () => { demoOnLauncherUpdateProgress = null }
+  },
+  getDeepSeekCredentialStatus: async () => demoCredential,
+  setDeepSeekApiKey: async apiKey => {
+    if (!apiKey.trim()) throw new Error('API Key 不能为空。')
+    demoCredential = { configured: true }
+    return demoCredential
+  },
+  clearDeepSeekApiKey: async () => {
+    demoCredential = { configured: false }
+    return demoCredential
+  },
+  listCustomApiProviders: async () => demoCustomApiProviders.map(provider => ({ ...provider, modelIds: [...provider.modelIds] })),
+  saveCustomApiProvider: async input => {
+    const route = input.route.trim()
+    if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(route)) throw new Error('路由格式无效。')
+    const previous = demoCustomApiProviders.find(item => item.route === input.originalRoute)
+    const provider: CustomApiProvider = {
+      route,
+      displayName: input.displayName.trim(),
+      baseUrl: input.baseUrl.trim(),
+      protocol: input.protocol,
+      modelIds: input.modelIds.map(id => id.trim()).filter(Boolean),
+      credentialName: input.apiKey?.trim() ? `${route.toUpperCase().replaceAll('-', '_')}_API_KEY` : previous?.credentialName ?? null,
+      hasApiKey: Boolean(input.apiKey?.trim()) || previous?.hasApiKey === true,
+    }
+    demoCustomApiProviders = demoCustomApiProviders.filter(item => item.route !== input.originalRoute && item.route !== route)
+    demoCustomApiProviders.push(provider)
+    return demoCustomApiProviders
+  },
+  removeCustomApiProvider: async route => {
+    demoCustomApiProviders = demoCustomApiProviders.filter(provider => provider.route !== route)
+    return demoCustomApiProviders
+  },
+  getGitHubAuthStatus: async () => demoGitHubAuth,
+  loginGitHubWithToken: async token => {
+    if (token.trim().length < 20) throw new Error('GitHub 访问令牌格式无效。')
+    demoGitHubAuth = {
+      authenticated: true,
+      login: 'demo-user',
+      name: 'Demo User',
+      avatarUrl: null,
+      scopes: ['repo', 'workflow', 'read:user'],
+      method: 'token',
+      oauthAvailable: true,
+      rateLimit: { limit: 5000, remaining: 4998, resetAt: new Date(Date.now() + 3600_000).toISOString() },
+    }
+    return demoGitHubAuth
+  },
+  beginGitHubDeviceLogin: async () => ({
+    userCode: 'DSH-2026',
+    verificationUri: 'https://github.com/login/device',
+    expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    intervalSeconds: 5,
+  }),
+  completeGitHubDeviceLogin: async () => {
+    await wait(900)
+    demoGitHubAuth = {
+      authenticated: true,
+      login: 'demo-user',
+      name: 'Demo User',
+      avatarUrl: null,
+      scopes: ['repo', 'workflow', 'read:user', 'user:email'],
+      method: 'oauth',
+      oauthAvailable: true,
+      rateLimit: { limit: 5000, remaining: 4999, resetAt: new Date(Date.now() + 3600_000).toISOString() },
+    }
+    return demoGitHubAuth
+  },
+  cancelGitHubDeviceLogin: async () => undefined,
+  logoutGitHub: async () => {
+    demoGitHubAuth = {
+      authenticated: false,
+      login: null,
+      name: null,
+      avatarUrl: null,
+      scopes: [],
+      method: null,
+      oauthAvailable: true,
+      rateLimit: null,
+    }
+    return demoGitHubAuth
+  },
+  listGitHubPullRequests: async (): Promise<GitHubPullRequestSummary[]> => demoGitHubAuth.authenticated ? [{
+    number: 42,
+    title: 'catalog: batch update',
+    url: 'https://github.com/rirko/dsh-melody-launcher/pull/42',
+    state: 'open',
+    draft: false,
+    author: demoGitHubAuth.login ?? 'demo-user',
+    createdAt: '2026-08-17T08:00:00Z',
+    updatedAt: '2026-08-18T08:00:00Z',
+    mergedAt: null,
+    headBranch: 'plugin-update',
+    baseBranch: 'main',
+  }] : [],
+  getGitHubStarStatus: async repository => demoStarredRepositories.has(repository.toLowerCase()),
+  setGitHubStar: async (repository, starred) => {
+    const key = repository.toLowerCase()
+    if (starred) demoStarredRepositories.add(key)
+    else demoStarredRepositories.delete(key)
+    return starred
+  },
+  chooseDirectory: async kind => kind === 'dshInstallPath'
+    ? 'D:\\DeepSeek Harness'
+    : kind === 'dshHome'
+      ? 'C:\\Users\\demo\\.dsh'
+      : kind === 'packsRoot'
+        ? 'C:\\Users\\demo\\AppData\\Local\\dsh-launcher\\dsh-packs'
+        : kind === 'packExport'
+          ? 'C:\\Users\\demo\\AppData\\Local\\dsh-launcher\\dsh-exports'
+          : 'C:\\Users\\demo\\Projects',
+  readProfile: async () => profile(),
+  listProfiles: async () => [{
+    id: demoSettings.profileName,
+    name: demoSettings.profileName,
+    description: '浏览器演示整合包',
+    dshVersion: demoSettings.dshVersion ?? '0.1.5-rc.1',
+    source: { kind: 'local' as const },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: new Date().toISOString(),
+    profileDir: `${demoSettings.dshHome}\\profiles\\${demoSettings.profileName}`,
+    initialized: true,
+    pluginCount: profile().dependencyCount,
+    enabledPluginCount: profile().plugins.filter(plugin => !plugin.builtin && plugin.enabled).length,
+    disabledPluginCount: profile().disabledCount,
+    missingDependencies: [],
+    hasNodeModules: true,
+    selected: true,
+  }],
+  createProfile: async request => {
+    if (request.name === demoSettings.profileName) throw new Error(`整合包「${request.name}」已存在。`)
+    return {
+      id: request.name,
+      name: request.name,
+      description: request.description ?? '',
+      dshVersion: request.dshVersion ?? demoSettings.dshVersion ?? null,
+      source: { kind: 'local' as const },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      profileDir: `${demoSettings.dshHome}\\profiles\\${request.name}`,
+      initialized: true,
+      pluginCount: 0,
+      enabledPluginCount: 0,
+      disabledPluginCount: 0,
+      missingDependencies: [],
+      hasNodeModules: false,
+      selected: false,
+    }
+  },
+  cloneProfile: async (sourceName, targetName, description) => {
+    const result = await demoApi.createProfile({ name: targetName, cloneFrom: sourceName, description })
+    return { ...result, pluginCount: profile().dependencyCount, enabledPluginCount: profile().dependencyCount }
+  },
+  switchProfile: async (profileName, _options) => {
+    demoSettings = { ...demoSettings, profileName, activePackId: undefined }
+    return demoSettings
+  },
+  deleteProfile: async profileName => {
+    if (profileName === demoSettings.profileName) throw new Error('当前整合包不能删除。')
+  },
+  readProfileMetadata: async profileName => {
+    const list = await demoApi.listProfiles()
+    const found = list.find(item => item.id === profileName)
+    if (!found) throw new Error(`整合包「${profileName}」不存在。`)
+    return found
+  },
+  exportProfile: async profileName => `C:\\Users\\demo\\Desktop\\${profileName}.zip`,
+  importProfile: async (_filePath, options) => demoApi.createProfile({ name: options?.name ?? 'imported-profile' }),
+  analyzeProfileRepository: async url => {
+    const parsed = parseGitHubImportUrl(url)
+    return {
+      repository: parsed.fullName,
+      branch: parsed.defaultBranch ?? 'main',
+      commit: 'demo000000000000000000000000000000000000',
+      manifestPath: 'dsh-profile.yaml' as const,
+      profileName: 'pack-demo',
+      description: '演示 GitHub 整合包仓库。',
+      version: '1.0.0',
+      dshVersion: demoSettings.dshVersion ?? '0.1.5-rc.1',
+      dshVersionInstalled: true,
+      plugins: [{
+        packageName: 'dsh-demo-plugin', enabled: true, order: 0, source: 'npm' as const,
+        repository: null, version: '0.1.0', commit: null, match: 'declared' as const, candidates: [],
+      }],
+      hasFullPackage: true,
+      fullPackagePluginBodies: [],
+      differences: [],
+      blockers: [],
+    }
+  },
+  importProfileRepository: async (_url, options) => demoApi.createProfile({ name: options.name ?? 'imported-profile' }),
+  matchProfilePlugin: async packageName => ({ packageName, source: 'npm', enabled: true }),
+  togglePlugin: async (packageName, enabled) => {
+    const selected = demoPlugins.find(plugin => plugin.packageName === packageName)
+    demoPlugins = renumber(demoPlugins.map(plugin => plugin.packageName === packageName ? { ...plugin, enabled } : plugin))
+    const linked = Boolean(selected?.repositoryFullName && demoInstalledApplications.some(application =>
+      application.repository.toLowerCase() === selected.repositoryFullName?.toLowerCase(),
+    ))
+    if (selected?.repositoryFullName) {
+      demoInstalledApplications = demoInstalledApplications.map(application =>
+        application.repository.toLowerCase() === selected.repositoryFullName?.toLowerCase()
+          ? { ...application, enabled }
+          : application,
+      )
+    }
+    if (selected) syncDemoMarketPluginState({ ...selected, enabled })
+    return { profile: profile(), installedApplications: demoInstalledApplications, linked }
+  },
+  reorderPlugins: async packageNames => {
+    const active = packageNames.map(name => demoPlugins.find(plugin => plugin.packageName === name)!).filter(Boolean)
+    const inactive = demoPlugins.filter(plugin => !plugin.enabled)
+    demoPlugins = renumber([...active, ...inactive])
+    return profile()
+  },
+  discoverCatalog: async (query, sort, page): Promise<CatalogDiscoveryResult> => {
+    const needle = query.trim().toLowerCase()
+    const matchingRepositories = demoRepositories
+      // 演示目录与真实目录保持一致：不再把仅有 dsh-skill 来源的仓库
+      // 当作独立市场结果，但混合仓库仍然保留并在检测后识别 Skill 组件。
+      .filter(repo => repo.kind === 'dsh' || repo.candidateTypes.some(type => type !== 'skill'))
+      .filter(repo => !needle || `${repo.fullName} ${repo.description}`.toLowerCase().includes(needle))
+      .sort((a, b) => sort === 'stars' ? b.stars - a.stars : b.updatedAt.localeCompare(a.updatedAt))
+    const start = (Math.max(1, page) - 1) * 30
+    const repositories = matchingRepositories.slice(start, start + 30)
+    return {
+      repositories,
+      topicTotals: { plugin: 3_257, skill: 0, application: 8 },
+      page: Math.max(1, page),
+      pageCount: 34,
+      rateRemaining: 9,
+      warnings: [],
+      dshInstallation: demoDshInstallation,
+      installedRepositories: demoPlugins.map(plugin => plugin.repositoryFullName).filter((value): value is string => Boolean(value)),
+      installedSkills: demoInstalledSkills,
+      installedApplications: demoInstalledApplications,
+      installedPresets: demoInstalledPresets,
+    }
+  },
+  refreshCatalogIndex: async (): Promise<CatalogIndexEntry[]> => demoRepositories.map(repository => {
+    const analysis = demoCatalogAnalysis(repository.fullName, repository.defaultBranch)
+    const tags = analysis.kind === 'dsh'
+      ? ['dsh']
+      : analysis.kind === 'invalid'
+        ? ['invalid']
+        : analysis.componentKinds.map(kind => kind === 'application' ? 'runtime' : kind)
+    return {
+      repository: repository.fullName,
+      defaultBranch: repository.defaultBranch,
+      repositoryUpdatedAt: repository.updatedAt,
+      tags: tags as CatalogIndexEntry['tags'],
+    }
+  }),
+  analyzeCatalogRepository: demoAnalyzeCatalogRepository,
+  importCatalogUrl: async (url): Promise<CatalogImportResult> => {
+    const parsed = parseGitHubImportUrl(url)
+    const branch = parsed.defaultBranch
+    const existing = demoRepositories.find(repo => repo.fullName.toLowerCase() === parsed.fullName.toLowerCase())
+    const repository: CatalogRepositoryResult = existing
+      ? { ...existing, defaultBranch: branch ?? existing.defaultBranch }
+      : {
+          id: -Math.abs(parsed.fullName.split('').reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0)),
+          fullName: parsed.fullName,
+          name: parsed.fullName.split('/')[1],
+          owner: parsed.fullName.split('/')[0],
+          description: '通过 GitHub 链接导入的仓库。',
+          url: `https://github.com/${parsed.fullName}`,
+          stars: 0,
+          language: null,
+          updatedAt: new Date().toISOString(),
+          topics: [],
+          defaultBranch: branch ?? 'main',
+          kind: parsed.fullName.toLowerCase() === DSH_REPOSITORY ? 'dsh' : 'repository',
+          candidateTypes: [],
+        }
+    const analysis = demoCatalogAnalysis(parsed.fullName, branch ?? repository.defaultBranch)
+    return { repository, analysis }
+  },
+  loadDshMarket: async (): Promise<DshMarketCatalog> => {
+    dshMarketProgressListeners.forEach(listener => listener({ name: '', phase: 'loading', percent: null, message: '正在读取 dsh-market 精选目录' }))
+    await wait(180)
+    return demoDshMarketCatalog()
+  },
+  installDshMarketPlugin: async name => {
+    const plugin = demoDshMarketPlugins.find(item => item.name === name)
+    if (!plugin) throw new Error('插件不在 dsh-market 精选目录中。')
+    dshMarketProgressListeners.forEach(listener => listener({ name, phase: 'downloading', percent: 52, message: '正在下载插件及依赖' }))
+    await wait(500)
+    plugin.installed = true; plugin.enabled = true; plugin.version = '1.0.0'
+    upsertDemoPluginFromMarket(plugin)
+    return demoDshMarketPlugins.filter(item => item.installed)
+  },
+  updateDshMarketPlugin: async name => {
+    const plugin = demoDshMarketPlugins.find(item => item.name === name)
+    if (!plugin?.installed) throw new Error('插件尚未安装，不能更新。')
+    dshMarketProgressListeners.forEach(listener => listener({ name, phase: 'verifying', percent: 86, message: '正在检查插件更新' }))
+    await wait(450)
+    plugin.updateAvailable = false; plugin.updateVersion = null
+    upsertDemoPluginFromMarket(plugin)
+    return demoDshMarketPlugins.filter(item => item.installed)
+  },
+  uninstallDshMarketPlugin: async name => {
+    const plugin = demoDshMarketPlugins.find(item => item.name === name)
+    if (!plugin?.installed) throw new Error('插件尚未安装。')
+    await wait(300)
+    plugin.installed = false; plugin.enabled = false; plugin.version = null
+    removeDemoPluginFromMarket(plugin)
+    return demoDshMarketPlugins.filter(item => item.installed)
+  },
+  toggleDshMarketPlugin: async (name, enabled) => {
+    const plugin = demoDshMarketPlugins.find(item => item.name === name)
+    if (!plugin?.installed) throw new Error('插件尚未安装。')
+    plugin.enabled = enabled
+    syncDemoPluginStateFromMarket(plugin)
+    return demoDshMarketPlugins.filter(item => item.installed)
+  },
+  checkDshMarketUpdates: async (): Promise<Record<string, { kind: 'npm'; current: string | null; latest: string | null; updateAvailable: boolean }>> => ({}),
+  installPlugin: async request => {
+    const fullName = typeof request === 'string' ? request : request.repository
+    const repo = demoRepositories.find(item => item.fullName === fullName)
+    const kind = repo?.kind === 'dsh' ? 'dsh' : 'plugin'
+    installProgressListeners.forEach(listener => listener({ repository: fullName, kind, phase: 'resolving', percent: 18, message: kind === 'dsh' ? '正在解析 DSH 安装包' : '正在解析插件仓库' }))
+    await wait(350)
+    installProgressListeners.forEach(listener => listener({ repository: fullName, kind, phase: 'downloading', percent: 28, message: kind === 'dsh' ? '正在下载并安装 DSH' : '正在下载并安装插件', indeterminate: true, downloadedBytes: 19_341_312 }))
+    await wait(900)
+    installProgressListeners.forEach(listener => listener({ repository: fullName, kind, phase: 'configuring', percent: 90, message: kind === 'dsh' ? '正在切换本地启动命令' : '正在更新插件配置' }))
+    await wait(350)
+    if (kind === 'dsh') {
+      demoDshInstallation = { installed: true, version: '0.1.3-alpha.2', executable: `${demoSettings.dshInstallPath}\\node_modules\\.bin\\dsh.cmd`, source: 'launcher' }
+      demoSettings = { ...demoSettings, launchExecutable: demoDshInstallation.executable!, launchArgs: ['web'] }
+    } else if (repo && !demoPlugins.some(plugin => plugin.repositoryFullName === fullName)) {
+      demoPlugins = renumber([...demoPlugins, {
+        packageName: `@${repo.owner}/${repo.name.toLowerCase()}`,
+        displayName: repo.name,
+        version: 'github',
+        description: repo.description,
+        repository: repo.url,
+        repositoryFullName: repo.fullName,
+        enabled: true,
+        builtin: false,
+        locked: false,
+        compatible: true,
+        order: 0,
+      }])
+    }
+    installProgressListeners.forEach(listener => listener({ repository: fullName, kind, phase: 'complete', percent: 100, message: kind === 'dsh' ? 'DSH 已安装' : '插件安装完成' }))
+    const analysis = kind === 'plugin' ? demoAnalysis(fullName, repo?.defaultBranch ?? 'main') : null
+    return {
+      kind,
+      profile: profile(),
+      settings: demoSettings,
+      dshInstallation: demoDshInstallation,
+      installedProfileName: analysis?.targets[0].profileName,
+      packageName: analysis?.targets[0].packageName,
+    }
+  },
+  installPluginFromNpm: async request => {
+    const repository = request.repository ?? `npm:${request.packageName}`
+    installProgressListeners.forEach(listener => listener({ repository, kind: 'plugin', phase: 'preparing', percent: 5, message: '正在准备 npm 插件' }))
+    await wait(700)
+    installProgressListeners.forEach(listener => listener({ repository, kind: 'plugin', phase: 'downloading', percent: 40, message: '正在下载插件及依赖', indeterminate: true }))
+    await wait(900)
+    installProgressListeners.forEach(listener => listener({ repository, kind: 'plugin', phase: 'configuring', percent: 88, message: '正在核对插件加载顺序' }))
+    demoPlugins = renumber([...demoPlugins, {
+      packageName: request.packageName,
+      displayName: request.packageName.split('/').at(-1) ?? request.packageName,
+      version: request.version ?? 'latest',
+      description: '演示：通过 npm 包名手动添加的插件',
+      enabled: true,
+      builtin: false,
+      locked: false,
+      compatible: true,
+      order: 0,
+    }])
+    installProgressListeners.forEach(listener => listener({ repository, kind: 'plugin', phase: 'complete', percent: 100, message: '插件安装完成' }))
+    return {
+      kind: 'plugin',
+      profile: profile(),
+      settings: demoSettings,
+      dshInstallation: demoDshInstallation,
+      installedProfileName: demoSettings.profileName,
+      packageName: request.packageName,
+    }
+  },
+  uninstallPlugin: async packageName => {
+    demoPlugins = renumber(demoPlugins.filter(plugin => plugin.packageName !== packageName))
+    return profile()
+  },
+  desktopStatus: async () => ({ ...demoDesktopState }),
+  desktopInstall: async target => {
+    const name = target.kind === 'github' ? target.name.split('/').at(-1) ?? target.name : target.name
+    demoDesktopState = {
+      ...demoDesktopState,
+      plugins: [...(demoDesktopState.plugins ?? []), {
+        packageName: name,
+        displayName: name,
+        version: target.version ?? 'latest',
+        description: '演示：通过桌面端自带的命令安装的插件',
+        enabled: true,
+        builtin: false,
+        locked: false,
+        compatible: true,
+        order: (demoDesktopState.plugins?.length ?? 0) + 1,
+      }],
+      pluginCount: (demoDesktopState.plugins?.length ?? 0) + 1,
+    }
+    await wait(900)
+  },
+  desktopUninstall: async packageName => {
+    const plugins = (demoDesktopState.plugins ?? []).filter(plugin => plugin.packageName !== packageName)
+    demoDesktopState = { ...demoDesktopState, plugins, pluginCount: plugins.length }
+    await wait(500)
+  },
+  desktopApplyMirror: async () => { await wait(300); demoDesktopState = { ...demoDesktopState, registry: demoDesktopState.mirrorRegistry ?? null } },
+  desktopRestoreMirror: async () => { await wait(300); demoDesktopState = { ...demoDesktopState, registry: null } },
+  desktopOpen: async () => { await wait(400); demoDesktopState = { ...demoDesktopState, running: true } },
+  trialPlugin: async (packageName, profileName = demoSettings.profileName) => {
+    const startedAt = new Date().toISOString()
+    const running: PluginTrialResult = {
+      packageName, profileName, phase: 'running', message: '正在隔离启动 DSH 核心与当前插件…', diagnostics: '',
+      startedAt, testedAt: null, durationMs: null, url: null,
+    }
+    pluginTrialListeners.forEach(listener => listener(running))
+    await wait(900)
+    const failed = packageName.includes('desktop') || packageName.includes('tui')
+    const failureDiagnostic = packageName.includes('desktop')
+      ? 'dsh-plugin-desktop: pending (waiting for service: desktopRuntime)'
+      : 'terminal plugin cannot activate inside the isolated web host'
+    const result: PluginTrialResult = {
+      ...running,
+      phase: failed ? 'failed' : 'passed',
+      message: failed ? '插件依赖当前隔离 Web 宿主未提供的服务。' : '隔离 Web 服务已启动，插件通过试运行。',
+      diagnostics: failed ? failureDiagnostic : 'Web service listening on http://127.0.0.1:3180/',
+      testedAt: new Date().toISOString(),
+      durationMs: 900,
+      url: failed ? null : 'http://127.0.0.1:3180/',
+    }
+    demoPluginTrials.set(`${profileName}:${packageName}`, result)
+    pluginTrialListeners.forEach(listener => listener(result))
+    return result
+  },
+  readPluginTrials: async () => [...demoPluginTrials.values()],
+  installSkill: async request => {
+    const analysis = demoSkillAnalysis(request.repository, request.defaultBranch)
+    const target = analysis.targets.find(item => item.id === request.targetId)
+    if (!target) throw new Error('Skill 安装目标无效。')
+    installProgressListeners.forEach(listener => listener({ repository: request.repository, kind: 'skill', phase: 'downloading', percent: 42, message: '正在下载 Skill' }))
+    await wait(500)
+    const installedSkill: InstalledSkill = {
+      name: target.name,
+      description: target.description,
+      path: `${demoSettings.dshHome}\\skills\\${target.name}`,
+      format: target.format,
+      enabled: true,
+      modelInvocable: target.modelInvocable,
+      userInvocable: target.userInvocable,
+    }
+    demoInstalledSkills = [...demoInstalledSkills.filter(skill => skill.name !== target.name), installedSkill]
+    installProgressListeners.forEach(listener => listener({ repository: request.repository, kind: 'skill', phase: 'complete', percent: 100, message: `${target.name} 已安装` }))
+    return { installedSkill, installedSkills: demoInstalledSkills }
+  },
+  readInstalledSkills: async () => demoInstalledSkills,
+  toggleSkill: async (name, enabled) => {
+    demoInstalledSkills = demoInstalledSkills.map(skill => skill.name === name ? { ...skill, enabled } : skill)
+    return demoInstalledSkills
+  },
+  uninstallSkill: async name => {
+    demoInstalledSkills = demoInstalledSkills.filter(skill => skill.name !== name)
+    return demoInstalledSkills
+  },
+  presetsBuiltin: async () => ([
+    { name: 'standard', displayName: '标准模式', description: '功能完整的编码 Agent，支持文件编辑、Shell、检索、Skills、计划与子代理。', order: 1 },
+    { name: 'code', displayName: 'PTC 模式', description: '具备标准模式全部能力，并通过 Code Mode SDK 呈现工具。', order: 2 },
+    { name: 'minimal', displayName: '极简模式', description: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。', order: 3 },
+    { name: 'cordis', displayName: '创造模式', description: '用于创建自定义 Agent preset，提供运行时检查与创作指导。', order: 4 },
+  ]),
+  skillMarketAnalyze: async (repository, defaultBranch) => ({
+    repository,
+    defaultBranch,
+    installability: 'choice',
+    summary: '演示数据：4 个技能。',
+    targets: [
+      { id: 'pdf:skills/pdf/SKILL.md', name: 'pdf', description: 'Use this skill whenever the user wants to do anything with PDF files.', sourcePath: 'skills/pdf/SKILL.md', format: 'bundle', revision: defaultBranch, modelInvocable: true, userInvocable: true },
+      { id: 'canvas-design:skills/canvas-design/SKILL.md', name: 'canvas-design', description: 'Create beautiful visual art in .png and .pdf documents.', sourcePath: 'skills/canvas-design/SKILL.md', format: 'bundle', revision: defaultBranch, modelInvocable: true, userInvocable: true },
+      { id: 'mcp-builder:skills/mcp-builder/SKILL.md', name: 'mcp-builder', description: 'Guide for creating high-quality MCP servers.', sourcePath: 'skills/mcp-builder/SKILL.md', format: 'bundle', revision: defaultBranch, modelInvocable: true, userInvocable: true },
+      { id: 'quick-ref:quick-ref.md', name: 'quick-ref', description: '单文件速查技能示例。', sourcePath: 'quick-ref.md', format: 'flat', revision: defaultBranch, modelInvocable: true, userInvocable: true },
+    ],
+  }),
+  skillMarketInstall: async ({ repository, target }) => {
+    installProgressListeners.forEach(listener => listener({ repository, kind: 'skill', phase: 'downloading', percent: 42, message: `正在下载 Skill ${target.name}` }))
+    await wait(500)
+    const installedSkill: InstalledSkill = {
+      name: target.name,
+      description: target.description,
+      path: `${demoSettings.dshHome}\\skills\\${target.name}`,
+      format: target.format,
+      enabled: true,
+      modelInvocable: target.modelInvocable,
+      userInvocable: target.userInvocable,
+    }
+    demoInstalledSkills = [...demoInstalledSkills.filter(skill => skill.name !== target.name), installedSkill]
+    installProgressListeners.forEach(listener => listener({ repository, kind: 'skill', phase: 'complete', percent: 100, message: `${target.name} 已安装` }))
+    return { installedSkill, installedSkills: demoInstalledSkills }
+  },
+  dshUsage: async () => {
+    await wait(250)
+    return { status: 'ok' as const, usage: { tokensToday: 1_284_532, cacheHitRate: 0.935 } }
+  },
+  deepseekBalance: async (force?: boolean) => {
+    await wait(force ? 600 : 200)
+    return {
+      status: 'ok' as const,
+      balance: {
+        isAvailable: true,
+        infos: [{ currency: 'CNY', totalBalance: 118.5, grantedBalance: 0.5, toppedUpBalance: 118 }],
+      },
+    }
+  },
+  newsFeed: async () => {
+    await wait(300)
+    return {
+      status: 'ok' as const,
+      items: [
+        {
+          title: '2026-09-04',
+          link: 'https://daily.juya.uk/issues/2026-09-04/',
+          pubDate: 'Fri, 04 Sep 2026 02:21:37 GMT',
+          summary: 'AI 早报 2026-09-04：OpenAI 发布 GPT-6 Astra；英伟达宣布收购 Hugging Face；智谱 GLM 夜间畅用活动上线。',
+          headlines: [
+            { text: 'OpenAI 发布 GPT-6 Astra', link: 'https://openai.com/index/gpt-6-astra/' },
+            { text: 'OpenAI Astra 访问补偿政策：按天发放 banked reset', link: 'https://x.com/thsottiaux/status/2095651088502591861' },
+            { text: '英伟达宣布以约129亿美元收购Hugging Face', link: 'https://blogs.nvidia.com/blog/nvidia-to-acquire-hugging-face/' },
+            { text: '智谱 GLM Coding Plan 推出夜间畅用活动', link: 'https://example.com/glm-night' },
+            { text: 'Qoder 国际版宣布 Efficient 模型层级即日起对所有订阅用户免费', link: 'https://example.com/qoder-efficient' },
+          ],
+          sections: [
+            {
+              title: '要闻',
+              items: [
+                { text: 'OpenAI 发布 GPT-6 Astra', link: 'https://openai.com/index/gpt-6-astra/' },
+                { text: 'OpenAI Astra 访问补偿政策：按天发放 banked reset', link: 'https://x.com/thsottiaux/status/2095651088502591861' },
+                { text: '英伟达宣布以约129亿美元收购Hugging Face', link: 'https://blogs.nvidia.com/blog/nvidia-to-acquire-hugging-face/' },
+              ],
+            },
+            {
+              title: '模型发布',
+              items: [
+                { text: 'Meta 开源 4000 亿参数多语言模型，权重与训练代码同步释出', link: 'https://example.com/section-meta' },
+                { text: '智谱 GLM-5.3 Flash 上线，延迟与价格同步下调', link: 'https://example.com/section-glm' },
+              ],
+            },
+            {
+              title: '开发生态',
+              items: [
+                { text: 'Qoder 国际版宣布 Efficient 模型层级即日起对所有订阅用户免费', link: 'https://example.com/qoder-efficient' },
+                { text: 'Cursor 发布 Tab 边预测边跳转的智能回跳', link: 'https://example.com/section-cursor' },
+              ],
+            },
+            {
+              title: '产品应用',
+              items: [
+                { text: '智谱 GLM Coding Plan 推出夜间畅用活动', link: 'https://example.com/glm-night' },
+              ],
+            },
+            {
+              title: '技术与洞察',
+              items: [
+                { text: '长上下文 RAG 的分块策略实测：语义分块胜过固定窗口', link: 'https://example.com/section-rag' },
+              ],
+            },
+            {
+              title: '行业动态',
+              items: [
+                { text: '英伟达宣布以约129亿美元收购Hugging Face', link: 'https://blogs.nvidia.com/blog/nvidia-to-acquire-hugging-face/' },
+              ],
+            },
+            {
+              title: '前瞻与传闻',
+              items: [
+                { text: '传 OpenAI 下季度推出自带虚拟员工的团队套餐', link: 'https://example.com/section-rumor' },
+              ],
+            },
+          ],
+        },
+        { title: 'OpenAI 推出 Agent 编排框架，支持跨会话记忆', link: 'https://example.com/2', pubDate: 'Thu, 03 Sep 2026 07:40:00 GMT', summary: '框架主打多智能体协作与工具调用的持久化状态管理。' },
+        { title: 'Anthropic 公布 Claude 技能生态年度报告', link: 'https://example.com/3', pubDate: 'Thu, 03 Sep 2026 07:20:00 GMT', summary: '社区技能仓库数量同比增长 4 倍，文档处理类下载量居首。' },
+        { title: '具身智能大模型首次在真实工厂完成 72 小时连续作业', link: 'https://example.com/4', pubDate: 'Wed, 02 Sep 2026 09:00:00 GMT', summary: '端到端视觉-动作模型在分拣产线上验证了长时程稳定性。' },
+        { title: '开源社区发布本地推理套件 v3，全面支持投机解码', link: 'https://example.com/5', pubDate: 'Wed, 02 Sep 2026 08:30:00 GMT', summary: '新版推理引擎在消费级显卡上吞吐提升 60%。' },
+        { title: '谷歌公开 Gemini 多模态检索新基准', link: 'https://example.com/6', pubDate: 'Wed, 02 Sep 2026 08:00:00 GMT', summary: '基准覆盖图文、视频与 3D 场景的统一嵌入评测。' },
+        { title: 'DeepSeek 高峰时段计费规则微调，夜间折扣维持', link: 'https://example.com/7', pubDate: 'Tue, 01 Sep 2026 10:00:00 GMT', summary: '工作日高峰定义不变，缓存命中价继续维持一折。' },
+        { title: 'Meta 开源 4000 亿参数多语言模型', link: 'https://example.com/8', pubDate: 'Tue, 01 Sep 2026 09:00:00 GMT', summary: '权重与训练代码同步释出，支持商用许可。' },
+      ],
+    }
+  },
+  skillMarketCatalog: async () => {
+    await wait(400)
+    return DEMO_SKILLS_SH_INDEX
+  },
+  skillMarketInstallByName: async ({ sourceRepository, skillId }) => {
+    installProgressListeners.forEach(listener => listener({ repository: sourceRepository, kind: 'skill', phase: 'downloading', percent: 42, message: `正在解析来源仓库并安装 ${skillId}` }))
+    await wait(500)
+    const installedSkill: InstalledSkill = {
+      name: skillId,
+      description: `来自 ${sourceRepository}（演示数据）`,
+      path: `${demoSettings.dshHome}\\skills\\${skillId}`,
+      format: 'bundle',
+      enabled: true,
+      modelInvocable: true,
+      userInvocable: true,
+    }
+    demoInstalledSkills = [...demoInstalledSkills.filter(skill => skill.name !== skillId), installedSkill]
+    installProgressListeners.forEach(listener => listener({ repository: sourceRepository, kind: 'skill', phase: 'complete', percent: 100, message: `${skillId} 已安装` }))
+    return { installedSkill, installedSkills: demoInstalledSkills }
+  },
+  installApplication: async request => {
+    const analysis = demoApplicationAnalysis(request.repository, request.defaultBranch)
+    const target = analysis.targets.find(item => item.id === request.targetId)
+    if (!target) throw new Error('应用加载项目标无效。')
+    installProgressListeners.forEach(listener => listener({ repository: request.repository, kind: 'application', phase: 'downloading', percent: 28, message: `正在下载并安装 ${target.name}`, indeterminate: true }))
+    await wait(650)
+    const now = new Date().toISOString()
+    const installedAddon: InstalledApplicationAddon = {
+      id: target.addonId,
+      name: target.name,
+      description: target.description,
+      repository: request.repository,
+      provider: target.provider,
+      packageName: target.packageName,
+      version: target.version ?? '2.0.0',
+      binName: target.binName,
+      entryPath: `C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\application-addons\\${target.addonId}\\runtime\\node_modules\\${target.packageName}\\lib\\bin.js`,
+      installPath: `C:\\Users\\demo\\AppData\\Roaming\\dsh-launcher\\application-addons\\${target.addonId}`,
+      launchMode: target.launchMode,
+      launchArgs: target.launchArgs,
+      enabled: true,
+      verified: target.verified,
+      provides: target.provides,
+      installedAt: demoInstalledApplications.find(item => item.id === target.addonId)?.installedAt ?? now,
+      updatedAt: now,
+    }
+    demoInstalledApplications = demoInstalledApplications
+      .filter(item => item.id !== installedAddon.id)
+      .map(item => installedAddon.launchMode === 'runtime-replacement' && item.launchMode === 'runtime-replacement' ? { ...item, enabled: false } : item)
+    demoInstalledApplications.push(installedAddon)
+    installProgressListeners.forEach(listener => listener({ repository: request.repository, kind: 'application', phase: 'complete', percent: 100, message: `${target.name} 已作为应用加载项安装` }))
+    return { installedAddon, installedAddons: demoInstalledApplications, profile: profile() }
+  },
+  readInstalledApplications: async () => demoInstalledApplications,
+  toggleApplication: async (id, enabled) => {
+    const selected = demoInstalledApplications.find(application => application.id === id)
+    demoInstalledApplications = demoInstalledApplications.map(application => {
+      if (application.id === id) return { ...application, enabled }
+      if (enabled && selected?.launchMode === 'runtime-replacement' && application.launchMode === 'runtime-replacement') return { ...application, enabled: false }
+      return application
+    })
+    const linked = Boolean(selected && demoPlugins.some(plugin =>
+      plugin.repositoryFullName?.toLowerCase() === selected.repository.toLowerCase(),
+    ))
+    if (selected) {
+      demoPlugins = renumber(demoPlugins.map(plugin =>
+        plugin.repositoryFullName?.toLowerCase() === selected.repository.toLowerCase()
+          ? { ...plugin, enabled }
+          : plugin,
+      ))
+    }
+    return { profile: profile(), installedApplications: demoInstalledApplications, linked }
+  },
+  uninstallApplication: async id => {
+    demoInstalledApplications = demoInstalledApplications.filter(application => application.id !== id)
+    return demoInstalledApplications
+  },
+  installPreset: async request => {
+    const repo = demoRepositories.find(item => item.fullName === request.repository)
+    const analysis = demoCatalogAnalysis(request.repository, repo?.defaultBranch ?? 'main')
+    const target = analysis.presetAnalysis?.targets.find(item => item.id === request.targetId)
+    if (!target) throw new Error('预设安装目标无效。')
+    installProgressListeners.forEach(listener => listener({ repository: request.repository, kind: 'preset', phase: 'downloading', percent: 42, message: '正在下载 Agent 预设' }))
+    await wait(500)
+    const installedPreset: InstalledPreset = {
+      name: target.name,
+      path: `${demoSettings.dshHome}\\.agent-presets\\${target.name}`,
+      enabled: true,
+    }
+    demoInstalledPresets = [...demoInstalledPresets.filter(preset => preset.name !== target.name), installedPreset]
+    installProgressListeners.forEach(listener => listener({ repository: request.repository, kind: 'preset', phase: 'complete', percent: 100, message: `${target.name} 已安装` }))
+    return { installedPreset, installedPresets: demoInstalledPresets }
+  },
+  readInstalledPresets: async () => demoInstalledPresets,
+  togglePreset: async (name, enabled) => {
+    demoInstalledPresets = demoInstalledPresets.map(preset => preset.name === name ? { ...preset, enabled } : preset)
+    return demoInstalledPresets
+  },
+  uninstallPreset: async name => {
+    demoInstalledPresets = demoInstalledPresets.filter(preset => preset.name !== name)
+    return demoInstalledPresets
+  },
+  getRuntimeState: async () => demoRuntime,
+  startRuntime: async () => {
+    const replacement = demoInstalledApplications.find(application => application.enabled && application.launchMode === 'runtime-replacement')
+    const activePort = demoPortFor(demoSettings.activePackId ?? '')
+    demoRuntime = replacement
+      ? { running: true, pid: 18420, startedAt: new Date().toISOString(), url: null, port: null, launchMode: 'application-replacement', applicationAddonId: replacement.id, applicationAddonName: replacement.name }
+      : { running: true, pid: 18420, startedAt: new Date().toISOString(), url: `http://127.0.0.1:${activePort}`, port: activePort, launchMode: 'web', applicationAddonId: null, applicationAddonName: null }
+    stateListeners.forEach(listener => listener(demoRuntime))
+    outputListeners.forEach(listener => listener({ channel: 'runtime', level: 'success', text: replacement ? `${replacement.name} 已启动。` : `DeepSeek Harness Web UI: http://127.0.0.1:${activePort}`, timestamp: new Date().toISOString() }))
+    return demoRuntime
+  },
+  stopRuntime: async () => {
+    demoRuntime = { ...demoRuntime, running: false, pid: null, port: null }
+    demoInstanceRunning.delete(demoSettings.activePackId ?? '')
+    stateListeners.forEach(listener => listener(demoRuntime))
+    demoInstanceListeners.forEach(listener => listener(demoInstanceSnapshots()))
+    return demoRuntime
+  },
+  listInstances: async () => demoInstanceSnapshots(),
+  startInstance: async (packId: string) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (pack) demoSettings = { ...demoSettings, activePackId: packId, profileName: packId, ...(pack.dshVersion ? { dshVersion: pack.dshVersion } : {}) }
+    const port = demoPortFor(packId)
+    demoRuntime = { running: true, pid: 18420, startedAt: new Date().toISOString(), url: `http://127.0.0.1:${port}`, port, launchMode: 'web', applicationAddonId: null, applicationAddonName: null }
+    demoInstanceRunning.add(packId)
+    stateListeners.forEach(listener => listener(demoRuntime))
+    demoInstanceListeners.forEach(listener => listener(demoInstanceSnapshots()))
+    return demoRuntime
+  },
+  stopInstance: async (packId: string) => {
+    demoInstanceRunning.delete(packId)
+    if (packId === demoSettings.activePackId) {
+      demoRuntime = { ...demoRuntime, running: false, pid: null, url: null, port: null }
+      stateListeners.forEach(listener => listener(demoRuntime))
+    }
+    demoInstanceListeners.forEach(listener => listener(demoInstanceSnapshots()))
+    return demoRuntime
+  },
+  activateInstance: async (packId: string) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (pack) demoSettings = { ...demoSettings, activePackId: packId, profileName: packId, ...(pack.dshVersion ? { dshVersion: pack.dshVersion } : {}) }
+    demoInstanceListeners.forEach(listener => listener(demoInstanceSnapshots()))
+    return demoRuntime
+  },
+  // 演示模式没有真进程：同样的三条校验（范围 / 运行中 / 与别的包重复）走一遍，界面行为与真实一致。
+  setInstancePort: async (packId: string, port: number) => {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('端口必须是 1–65535 之间的整数。')
+    if (demoInstanceRunning.has(packId) || (packId === demoSettings.activePackId && demoRuntime.running)) {
+      throw new Error('实例正在运行：先停止实例，再改端口。')
+    }
+    const taken = demoPacks.find(pack => pack.id !== packId && demoPortFor(pack.id) === port)
+    if (taken) throw new Error(`端口 ${port} 已被整合包「${taken.name}」占用，换一个。`)
+    demoInstancePorts.set(packId, port)
+    demoInstanceListeners.forEach(listener => listener(demoInstanceSnapshots()))
+    return demoInstanceSnapshots()
+  },
+  openExternal: async () => undefined,
+  openPath: async () => undefined,
+  openProfilePluginFolder: async () => undefined,
+  recommendedWebUiStatus: async () => ({ installed: false, enabled: false }),
+  recommendedWebUiInstall: async () => ({ installed: false, enabled: false }),
+  setWindowMode: async () => undefined,
+  minimizeWindow: async () => undefined,
+  toggleMaximizeWindow: async () => false,
+  closeWindow: async () => undefined,
+  onRuntimeOutput: listener => {
+    outputListeners.add(listener)
+    return () => outputListeners.delete(listener)
+  },
+  onRuntimeState: listener => {
+    stateListeners.add(listener)
+    return () => stateListeners.delete(listener)
+  },
+  // 演示模式不会真起 DSH 进程，端口冲突永不发生；留着接口形状，答复直接丢弃。
+  answerPortConflict: () => undefined,
+  onPortConflict: () => () => undefined,
+  onInstancesChanged: listener => {
+    demoInstanceListeners.add(listener)
+    return () => demoInstanceListeners.delete(listener)
+  },
+  onInstallProgress: listener => {
+    installProgressListeners.add(listener)
+    return () => installProgressListeners.delete(listener)
+  },
+  onPluginTrialEvent: listener => {
+    pluginTrialListeners.add(listener)
+    return () => pluginTrialListeners.delete(listener)
+  },
+  aiInstall: async input => {
+    demoAiCancelled = false
+    setDemoAiStatus({ phase: 'preparing', repository: input.repository, taskKind: 'repository-install', subject: input.repository, startedAt: new Date().toISOString(), sessionId: null, message: '正在准备 ACP 运行时…' })
+    emitAiEvent({ kind: 'log', text: `开始研究 ${input.repository}（分支 ${input.defaultBranch}）` })
+    await wait(500)
+    emitAiEvent({ kind: 'snapshot', snapshotId: `demo-${Date.now()}` })
+    emitAiEvent({ kind: 'log', text: '已为当前整合包生成配置快照。' })
+    setDemoAiStatus({ phase: 'running', sessionId: 'demo-session', message: 'AI 正在研究仓库并尝试安装…' })
+    await wait(700)
+    emitAiEvent({ kind: 'log', text: '读取仓库结构，确认组件形态…' })
+    emitAiEvent({ kind: 'auto-approved', toolName: 'read_file', reason: '只读操作，自动放行' })
+    await wait(400)
+    emitAiEvent({ kind: 'log', text: '发现组件位于 `packages/web-app`，需要写入整合包配置。' })
+    emitAiEvent({ kind: 'approval', request: { id: 'demo-1', toolName: 'bash', toolKind: 'bash', args: 'dsh plugin add @demo/dsh-web-app', reason: '写文件或运行安装命令，需要确认' } })
+    // 挂起等待 aiApprove 裁决；取消由 aiCancel 兜底（resolve(false) 并置 cancelled）。
+    const allowed = await new Promise<boolean>(resolve => {
+      demoAiResolve = resolve
+    })
+    if (demoAiCancelled) return { ok: false, message: '用户已取消' }
+    emitAiEvent({ kind: 'log', text: allowed ? '已批准安装命令。' : '已拒绝安装命令。' })
+    if (allowed) {
+      setDemoAiStatus({ phase: 'done', message: 'AI 已完成研究并安装组件。' })
+      emitAiEvent({ kind: 'log', text: '组件已写入整合包，安装完成。' })
+      emitAiEvent({ kind: 'done', message: 'AI 已完成研究并安装组件。请检查改动；不满意可还原快照。' })
+      return { ok: true, message: 'AI 已完成研究并安装组件。' }
+    }
+    setDemoAiStatus({ phase: 'done', message: 'AI 已完成研究，但安装命令被拒绝。' })
+    emitAiEvent({ kind: 'done', message: '安装命令被拒绝，任务结束。快照仍保留，可还原。' })
+    return { ok: false, message: '安装命令被拒绝。' }
+  },
+  aiAdaptPlugin: async input => {
+    setDemoAiStatus({ phase: 'preparing', repository: null, taskKind: 'plugin-adaptation', subject: input.packageName, startedAt: new Date().toISOString(), sessionId: null, message: '正在准备插件适配环境…' })
+    emitAiEvent({ kind: 'log', text: `正在读取 ${input.packageName} 的隔离试运行诊断。` })
+    await wait(500)
+    setDemoAiStatus({ phase: 'running', sessionId: 'demo-adaptation', message: 'AI 正在分析试运行诊断并尝试适配插件…' })
+    emitAiEvent({ kind: 'log', text: '检测到插件依赖当前 Web 宿主没有提供的服务，建议从 Web bundles 中安全停用。' })
+    await wait(700)
+    setDemoAiStatus({ phase: 'done', message: 'AI 已完成插件适配分析。' })
+    emitAiEvent({ kind: 'done', message: 'AI 已完成分析与修复尝试。请检查结论和改动。' })
+    return { ok: true, message: 'AI 已完成插件适配分析。' }
+  },
+  aiRepairRuntime: async () => {
+    setDemoAiStatus({ phase: 'preparing', repository: null, taskKind: 'runtime-repair', subject: demoSettings.profileName, startedAt: new Date().toISOString(), sessionId: null, message: '正在准备启动修复环境…' })
+    await wait(500)
+    setDemoAiStatus({ phase: 'running', sessionId: 'demo-runtime-repair', message: 'AI 正在分析启动诊断并尝试修复…' })
+    emitAiEvent({ kind: 'log', text: '正在检查整合包的 Bundle 加载顺序和宿主服务依赖。' })
+    await wait(700)
+    setDemoAiStatus({ phase: 'done', message: 'AI 已完成启动修复。' })
+    emitAiEvent({ kind: 'done', message: 'AI 已完成分析与修复尝试。请重新启动验证。' })
+    return { ok: true, message: 'AI 已完成启动修复。' }
+  },
+  aiApprove: async (requestId, allow) => {
+    if (requestId !== 'demo-1' || !demoAiResolve) return false
+    demoAiResolve(Boolean(allow))
+    demoAiResolve = null
+    return true
+  },
+  aiCancel: async () => {
+    demoAiCancelled = true
+    if (demoAiResolve) {
+      demoAiResolve(false)
+      demoAiResolve = null
+    }
+    setDemoAiStatus({ phase: 'cancelled', message: '用户已取消' })
+    emitAiEvent({ kind: 'cancelled', message: '用户已取消任务。快照仍保留，可还原。' })
+  },
+  aiRollback: async () => {
+    emitAiEvent({ kind: 'log', text: '正在还原快照…' })
+    await wait(400)
+    emitAiEvent({ kind: 'log', text: '配置已还原到任务前状态。' })
+    return { restored: 2, profileName: demoSettings.profileName }
+  },
+  aiStatus: async () => demoAiStatus,
+  aiHasSnapshot: async () => demoAiStatus.phase !== 'idle',
+  listAiSessions: async () => demoAiSessions.map(session => ({ ...session, messages: session.messages.map(message => ({ ...message })) })),
+  createAiSession: async input => demoSession(input),
+  sendAiSessionMessage: async (sessionId, text) => {
+    const session = demoAiSessions.find(item => item.id === sessionId)
+    if (!session) throw new Error('DSH Copilot 会话不存在。')
+    const userMessage: AiMessage = { id: `user-${Date.now()}`, role: 'user', text, createdAt: new Date().toISOString() }
+    session.messages.push(userMessage)
+    session.phase = 'running'
+    session.updatedAt = new Date().toISOString()
+    session.messageCount = session.messages.length
+    emitDemoSession({ kind: 'message', sessionId, message: userMessage })
+    emitDemoSession({ kind: 'session-updated', session })
+    window.setTimeout(() => {
+      const message: AiMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        text: `已收到：${text}\n\n这是浏览器演示模式中的 DSH Copilot 回复。`,
+        createdAt: new Date().toISOString(),
+      }
+      session.messages.push(message)
+      session.phase = 'done'
+      session.updatedAt = new Date().toISOString()
+      session.messageCount = session.messages.length
+      emitDemoSession({ kind: 'message', sessionId, message })
+      emitDemoSession({ kind: 'session-updated', session })
+    }, 600)
+    return session
+  },
+  listCopilotModels: async () => [
+    { provider: 'deepseek-official', model: 'deepseek-v4-flash', label: 'DeepSeek 官方 · deepseek-v4-flash', available: true },
+    { provider: 'ali', model: 'deepseek-v4-flash-0731', label: '阿里云 DashScope · deepseek-v4-flash-0731', available: true },
+  ],
+  setAiSessionModel: async (sessionId, model) => {
+    const session = demoAiSessions.find(item => item.id === sessionId)
+    if (!session) throw new Error('DSH Copilot 会话不存在。')
+    session.model = model || null
+    session.updatedAt = new Date().toISOString()
+    emitDemoSession({ kind: 'session-updated', session })
+    return session
+  },
+  cancelAiSession: async sessionId => {
+    const session = demoAiSessions.find(item => item.id === sessionId)
+    if (session) {
+      session.phase = 'cancelled'
+      emitDemoSession({ kind: 'session-updated', session })
+    }
+  },
+  approveAiSession: async () => true,
+  rollbackAiSession: async () => ({ restored: 2, profileName: demoSettings.profileName }),
+  deleteAiSession: async sessionId => {
+    demoAiSessions = demoAiSessions.filter(item => item.id !== sessionId)
+    emitDemoSession({ kind: 'deleted', sessionId })
+  },
+  listPacks: async () => demoPacks.map(pack => ({ ...pack, plugins: pack.plugins.map(plugin => ({ ...plugin })) })),
+  analyzePackImport: async () => ({
+    // demo 无法读真实 zip，返回 raw 形态样例以演练扫描导入 UI（含可编辑包名）。
+    id: '',
+    name: '',
+    description: '非标准整合包：扫描到 2 个插件、1 个技能。',
+    version: '1.0.0',
+    dshVersion: null,
+    source: 'raw',
+    items: [
+      { packageName: 'dsh-anchored-standard', available: true, offline: true },
+      { packageName: 'dsh-router-standard', available: true, offline: true },
+      { packageName: 'git-workflow', available: true, offline: true, kind: 'skill' },
+    ],
+  }),
+  importPack: async (_path, items, _options) => {
+    const installed = items?.length ? items : ['dsh-anchored-standard', 'dsh-router-standard', 'git-workflow']
+    return { id: 'pack-import-demo', installed, failures: [], state: 'complete' }
+  },
+  exportPack: async packId => {
+    const pack = demoPacks.find(item => item.id === packId)
+    return pack ? `C:\\Users\\demo\\Desktop\\${pack.name}.zip` : null
+  },
+  previewSessionImport: async (sourcePackId, targetPackId) => demoSessionImportPreview(sourcePackId, targetPackId),
+  importSessionHistory: async (sourcePackId, targetPackId) => ({
+    ...demoSessionImportPreview(sourcePackId, targetPackId),
+    copiedFiles: 2,
+    copiedBytes: 460_800,
+    undoId: `${Date.now()}`,
+  }),
+  undoSessionImport: async () => ({ removed: 2, kept: 0 }),
+  createVersionClone: async packId => {
+    const source = demoPacks.find(item => item.id === packId)
+    const now = new Date().toISOString()
+    const clone: PackStatus = {
+      ...(source ?? demoPacks[0])!,
+      id: `${packId}-clone`,
+      name: `${source?.name ?? packId} · DSH 0.1.5-rc.2`,
+      dshVersion: '0.1.5-rc.2',
+      state: 'complete',
+      installedAt: now,
+      updatedAt: now,
+    }
+    demoPacks = [...demoPacks, clone]
+    return clone
+  },
+  restoreOfficialPack: async () => ({ id: 'pack-official-demo', installed: [], failures: [], state: 'complete' }),
+  listOfficialPackVersions: async () => demoOfficialReleases,
+  readOfficialPackStatus: async () => {
+    const installedVersions = demoPacks
+      .map(pack => pack.officialVersion)
+      .filter((version): version is string => Boolean(version))
+      .sort((left, right) => (left === right ? 0 : left < right ? 1 : -1))
+    const recommended = demoOfficialReleases[0]?.version ?? null
+    return {
+      recommended,
+      installedVersions,
+      updateAvailable: Boolean(recommended && installedVersions[0] && installedVersions[0] !== recommended),
+      error: null,
+      checkedAt: new Date().toISOString(),
+    }
+  },
+  installOfficialPackVersion: async version => {
+    const release = demoOfficialReleases.find(item => item.version === version)
+    if (!release) throw new Error(`没有官方整合包 ${version}。`)
+    const displayName = `官方默认整合包 ${release.version}`
+    const label = `官方整合包 ${release.version}`
+    // demo：模拟一次「先走直连、太慢切镜像」的下载，好让进度条与来源回显在纯浏览器里也能验收。
+    const total = release.size || 0
+    const segments = [
+      { source: 'GitHub 直连', speed: 60 * 1024, steps: 3 },
+      { source: 'gh-proxy.com', speed: 3.4 * 1024 * 1024, steps: 9 },
+    ]
+    let received = 0
+    let emitted = 0
+    for (const segment of segments) {
+      for (let step = 0; step < segment.steps; step += 1) {
+        await new Promise(resolve => setTimeout(resolve, 140))
+        emitted += 1
+        received = Math.max(received, Math.round((total * emitted) / 12))
+        emitPackProgress({ kind: 'download', label, received, total, speed: segment.speed, source: segment.source })
+      }
+    }
+    // 下载完接着是导入阶段（下载完成 → 补装 DSH 运行时 → 解压 → 完成），与主进程的事件顺序一致。
+    emitPackProgress({ kind: 'stage', label: '下载完成，正在写入并解压整合包…', percent: null })
+    await new Promise(resolve => setTimeout(resolve, 600))
+    if (release.dshVersion) {
+      emitPackProgress({ kind: 'stage', label: `正在准备 DSH ${release.dshVersion}（本机未安装，需要先下载运行时）`, percent: null })
+      for (const percent of [12, 38, 64, 89]) {
+        await new Promise(resolve => setTimeout(resolve, 260))
+        emitPackProgress({ kind: 'stage', label: `正在准备 DSH ${release.dshVersion} 依赖`, percent })
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 300))
+    emitPackProgress({ kind: 'status', message: `正在解压快照包「${displayName}」…` })
+    for (let done = 500; done <= 16000; done += 500) {
+      emitPackProgress({ kind: 'extract', done, total: 16490 })
+      if (done % 2000 === 0) await new Promise(resolve => setTimeout(resolve, 70))
+    }
+    emitPackProgress({ kind: 'extract', done: 16490, total: 16490 })
+    // 与主进程一致：同名重复下载得到「原名 (2)」。
+    const taken = demoPacks.filter(pack => pack.name === displayName || pack.name.startsWith(`${displayName} (`)).length
+    const name = taken === 0 ? displayName : `${displayName} (${taken + 1})`
+    const id = `pack-official-${release.version.replace(/[^a-z0-9]+/gi, '-')}${taken === 0 ? '' : `-${taken + 1}`}`
+    const now = new Date().toISOString()
+    demoPacks = [...demoPacks, {
+      id,
+      name,
+      description: '官方默认整合包：Web 全家桶 + Office 文档技能 + 去 AI 味写作技能。',
+      version: '1.0.0',
+      dshVersion: release.dshVersion,
+      officialVersion: release.version,
+      source: 'snapshot',
+      enabled: false,
+      state: 'complete',
+      plugins: [{ packageName: '@linxin666/dsh-web-all', enabled: true }],
+      skills: [
+        { name: 'humanizer-zh', format: 'bundle', enabled: true },
+        { name: 'find-skills', format: 'bundle', enabled: true },
+      ],
+      installedAt: now,
+      updatedAt: now,
+    }]
+    const result = { id, installed: [], failures: [], state: 'complete' as const }
+    emitPackProgress({ kind: 'done', result })
+    return result
+  },
+  pickPackFile: async () => 'C:\\Users\\demo\\Downloads\\example-pack.zip',
+  pickOfflinePackDir: async () => 'C:\\Users\\demo\\Downloads\\dsh-origin-3080',
+  pickOfflinePackZip: async () => 'C:\\Users\\demo\\Downloads\\dsh-origin-3080.zip',
+  // 演示模式没有磁盘可写：直说装不了，不假装进度。
+  importOfflinePack: async () => ({ ok: false, reason: '演示模式下不能真的装配整合包。' }),
+  cancelOfflinePackImport: async () => undefined,
+  verifyPack: async packId => ({
+    ok: false,
+    verdict: '有 1 处对不上号',
+    dshVersion: '0.1.5-rc.1',
+    availableKernels: ['0.1.5-rc.1'],
+    checks: [
+      { id: 1, title: '清单与目录对得上', status: 'pass' as const, detail: '17 条依赖都在 node_modules 里。', findings: [] },
+      { id: 2, title: '没有对不上号的散件', status: 'warn' as const, detail: '2 个目录没在清单里声明（下次动依赖会被 pnpm 当垃圾清掉）。', findings: ['demo-stray', 'demo-ghost'] },
+      { id: 3, title: '链接不指向包外', status: 'pass' as const, detail: '3 条链接全部指向包内。', findings: [] },
+      { id: 4, title: '插件入口存在', status: 'pass' as const, detail: '17 个启用插件都有可用的入口文件。', findings: [] },
+      { id: 5, title: '内核版本匹配', status: 'fail' as const, detail: '包要用 DSH 0.1.5-rc.1，但随包内核只有 0.2.0-rc.2。', findings: ['缺内核：0.1.5-rc.1'] },
+      { id: 6, title: '逐插件依赖与入口', status: 'warn' as const, detail: '1 条插件依赖在包内解析不到（这类包能起，但插件加载就报错）。', findings: ['demo-plugin 需要 demo-dep（^1.0.0），包内解析不到'] },
+    ],
+    prompt: `这个整合包（${packId}）的家目录自检没过，请按下面逐条就地修。\n（演示模式：这里是示例修复提示词。）`,
+  }),
+  openPackExtras: async () => 'C:\\Users\\demo\\.dsh\\extras',
+  readPacksRoot: async () => 'C:\\Users\\demo\\AppData\\Local\\dsh-launcher\\dsh-packs',
+  readLauncherExecutablePath: async () => 'C:\\Users\\demo\\AppData\\Local\\dsh-launcher\\DSH Launcher.exe',
+  readPackExportDir: async () => 'C:\\Users\\demo\\AppData\\Local\\dsh-launcher\\dsh-exports',
+  openPackExportDir: async () => 'C:\\Users\\demo\\AppData\\Local\\dsh-launcher\\dsh-exports',
+  // 演示模式没有装配引擎：一律空闲态，不编进度。
+  readWorkbenchStatus: async () => null,
+  readPackExtras: async () => ({ exists: true, count: 3 }),
+  adoptPackFolder: async (homePath, name) => {
+    const existing = demoPacks.find(item => item.id === name)
+    if (existing) return existing
+    const pack: PackStatus = {
+      id: homePath.split(/[\\/]/).filter(Boolean).at(-1) ?? 'adopted',
+      name: name ?? '接入的家目录',
+      description: '',
+      version: '1.0.0',
+      dshVersion: null,
+      source: 'created',
+      enabled: false,
+      state: 'complete',
+      plugins: [],
+      installedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    demoPacks = [...demoPacks, pack]
+    return pack
+  },
+  getDroppedFilePath: file => (file as File & { path?: string }).path ?? 'C:\\Users\\demo\\Downloads\\example-pack.zip',
+  activatePack: async packId => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    demoPacks = demoPacks.map(item => ({ ...item, enabled: item.id === packId }))
+    demoSettings = { ...demoSettings, activePackId: packId, profileName: packId, ...(pack.dshVersion ? { dshVersion: pack.dshVersion } : {}) }
+    return demoSettings
+  },
+  renamePack: async (packId, name) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const next = { ...pack, name: name.trim(), updatedAt: new Date().toISOString() }
+    demoPacks = demoPacks.map(item => (item.id === packId ? next : item))
+    return next
+  },
+  createBlankPack: async request => {
+    const now = new Date().toISOString()
+    const slug = request.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled'
+    // 与主进程一致：给了文件夹名就用它当包标识，否则按显示名派生。
+    let id = (request.folderName ?? '').trim() || `pack-${slug}`
+    for (let index = 2; demoPacks.some(item => item.id === id); index += 1) id = `pack-${slug}-${index}`
+    const pack: PackStatus = {
+      id,
+      name: request.name.trim(),
+      description: '',
+      version: '1.0.0',
+      dshVersion: request.dshVersion ?? demoSettings.dshVersion ?? '0.1.5-rc.1',
+      source: 'created',
+      enabled: false,
+      state: 'complete',
+      plugins: [],
+      installedAt: now,
+      updatedAt: now,
+    }
+    demoPacks = [...demoPacks, pack]
+    // 与主进程一致：零包状态下新建的包直接成为当前包（空态引导闭环）。
+    if (!demoSettings.activePackId) {
+      demoPacks = demoPacks.map(item => ({ ...item, enabled: item.id === id }))
+      demoSettings = { ...demoSettings, activePackId: id, profileName: id }
+      return { ...pack, enabled: true }
+    }
+    return pack
+  },
+  packDiskUsage: async packId => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    return 42_000_000 + pack.plugins.length * 18_000_000
+  },
+  removePack: async packId => {
+    const before = demoPacks.length
+    demoPacks = demoPacks.filter(item => item.id !== packId)
+    if (demoSettings.activePackId === packId) {
+      // 与主进程一致：删掉激活包后落到剩余包；一个不剩就进入零包引导态（指针置空）。
+      if (demoPacks.length === 0) {
+        demoSettings = { ...demoSettings, activePackId: null }
+      } else {
+        const next = demoPacks.find(item => item.id === 'web') ?? demoPacks[demoPacks.length - 1]
+        demoPacks = demoPacks.map(item => ({ ...item, enabled: item.id === next.id }))
+        demoSettings = { ...demoSettings, activePackId: next.id, profileName: next.id }
+      }
+    }
+    return { removed: before - demoPacks.length }
+  },
+  rollbackPack: async () => ({ restored: 1, profileName: demoSettings.profileName }),
+  packHasSnapshot: async () => false,
+  addPackPlugin: async (packId, packageName) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const updated: PackStatus = {
+      ...pack,
+      plugins: pack.plugins.some(plugin => plugin.packageName === packageName)
+        ? pack.plugins
+        : [...pack.plugins, { packageName, enabled: true }],
+      updatedAt: new Date().toISOString(),
+    }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  addPackPreset: async (packId, presetName) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const presets = pack.presets?.some(preset => preset.name === presetName)
+      ? pack.presets
+      : [...(pack.presets ?? []), { name: presetName, enabled: true }]
+    const updated: PackStatus = { ...pack, presets, updatedAt: new Date().toISOString() }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  addPackSkill: async (packId, skillName) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const skills = pack.skills?.some(skill => skill.name === skillName)
+      ? pack.skills
+      : [...(pack.skills ?? []), { name: skillName, format: 'bundle' as const, enabled: true }]
+    const updated: PackStatus = { ...pack, skills, updatedAt: new Date().toISOString() }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  addPackApplication: async (packId, addonId) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const applications = pack.applications?.some(addon => addon.id === addonId)
+      ? pack.applications
+      : [...(pack.applications ?? []), { id: addonId, name: addonId, enabled: true }]
+    const updated: PackStatus = { ...pack, applications, updatedAt: new Date().toISOString() }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  togglePackItem: async (packId, packageName, enabled) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const updated: PackStatus = {
+      ...pack,
+      plugins: pack.plugins.map(plugin => (plugin.packageName === packageName ? { ...plugin, enabled } : plugin)),
+      updatedAt: new Date().toISOString(),
+    }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  togglePackPreset: async (packId, presetName, enabled) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const updated: PackStatus = {
+      ...pack,
+      presets: pack.presets?.map(preset => (preset.name === presetName ? { ...preset, enabled } : preset)),
+      updatedAt: new Date().toISOString(),
+    }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  togglePackSkill: async (packId, skillName, enabled) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const updated: PackStatus = {
+      ...pack,
+      skills: pack.skills?.map(skill => (skill.name === skillName ? { ...skill, enabled } : skill)),
+      updatedAt: new Date().toISOString(),
+    }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  togglePackApplication: async (packId, addonId, enabled) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const updated: PackStatus = {
+      ...pack,
+      applications: pack.applications?.map(addon => (addon.id === addonId ? { ...addon, enabled } : addon)),
+      updatedAt: new Date().toISOString(),
+    }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  removePackItem: async (packId, packageName) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const updated: PackStatus = {
+      ...pack,
+      plugins: pack.plugins.filter(plugin => plugin.packageName !== packageName),
+      updatedAt: new Date().toISOString(),
+    }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  removePackPreset: async (packId, presetName) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const presets = pack.presets?.filter(preset => preset.name !== presetName)
+    const updated: PackStatus = { ...pack, presets: presets?.length ? presets : undefined, updatedAt: new Date().toISOString() }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  removePackSkill: async (packId, skillName) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const skills = pack.skills?.filter(skill => skill.name !== skillName)
+    const updated: PackStatus = { ...pack, skills: skills?.length ? skills : undefined, updatedAt: new Date().toISOString() }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  removePackApplication: async (packId, addonId) => {
+    const pack = demoPacks.find(item => item.id === packId)
+    if (!pack) throw new Error(`未找到整合包：${packId}`)
+    const applications = pack.applications?.filter(addon => addon.id !== addonId)
+    const updated: PackStatus = { ...pack, applications: applications?.length ? applications : undefined, updatedAt: new Date().toISOString() }
+    demoPacks = demoPacks.map(item => (item.id === packId ? updated : item))
+    return updated
+  },
+  onCatalogAnalysisProgress: listener => {
+    catalogAnalysisProgressListeners.add(listener)
+    return () => catalogAnalysisProgressListeners.delete(listener)
+  },
+  onDshMarketProgress: listener => {
+    dshMarketProgressListeners.add(listener)
+    return () => dshMarketProgressListeners.delete(listener)
+  },
+  onPackProgress: listener => {
+    packProgressListeners.add(listener)
+    return () => packProgressListeners.delete(listener)
+  },
+  // demo 没有启动核对流程，状态由 readOfficialPackStatus 现算（见上面）。
+  onOfficialPackStatus: () => () => undefined,
+  // 演示模式不跑装配，自然没有阶段事件。
+  onOfflinePackProgress: () => () => undefined,
+  onAiInstallEvent: listener => {
+    aiEventListeners.add(listener)
+    return () => aiEventListeners.delete(listener)
+  },
+  onAiSessionEvent: listener => {
+    aiSessionEventListeners.add(listener)
+    return () => aiSessionEventListeners.delete(listener)
+  },
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 一起开发
+    url: https://github.com/rirko/dsh-melody-launcher#参与贡献
+    about: 想参与整合包功能开发？加 QQ 1250104511 聊聊。
+  - name: 📖 DeepSeek Harness 本体问题
+    url: https://github.com/deepseek-ai/deepseek-harness/issues
+    about: DSH 本体（而非启动器）的问题请到上游仓库反馈。

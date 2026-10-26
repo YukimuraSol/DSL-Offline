@@ -1,0 +1,120 @@
+/**
+ * 「整合包 = 真隔离环境」一次性迁移。
+ *
+ *   1) 默认家目录收编为默认整合包 `web`（homePath 缺省 = 共用默认家目录）；
+ *   2) 默认家目录里其它已存在的 Profile 注册为共用家目录的包（旧导入包）；
+ *   3) 保证 activePackId 指向一个存在的包（与 profileName 同步）。
+ *
+ * 迁移只跑一次（packsV2Migrated）：之后注册表为空 = 用户删光了所有包的零包引导态，
+ * 迁移不得重建任何包。整合包只由「新建 / 导入」产生，下载 DSH 版本不再自动建包。
+ */
+
+import { readdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import type { AppSettings } from '../src/types'
+import { isDesktopHomeProfile, isSafeProfileName } from './profile'
+import { readProfileMetadata } from './profile-service'
+import { readPackRegistry, upsertPackRecord } from './pack-registry'
+
+/**
+ * 这个家目录里是不是已经有 DSH 自己跑出来的东西。
+ *
+ * 判据用数据而不是目录时间戳：会话日志或凭据文件只要存在，就说明这台机器在装启动器
+ * 之前就用 `dsh` 命令起过服务——用户关心的「我之前的配置和记录还在不在」正是这件事。
+ * 迁移只跑一次，此刻启动器自己还没建过任何包，所以不会把启动器建的包误标。
+ */
+async function homeHasNativeDshData(home: string): Promise<boolean> {
+  if (existsSync(path.join(home, '.credentials.yaml'))) return true
+  const projects = await readdir(path.join(home, 'sessions'), { withFileTypes: true }).catch(() => [])
+  return projects.some(entry => entry.isDirectory())
+}
+
+export interface PackHomeMigrationDeps {
+  registryPath: string
+  readStoredSettings: () => Promise<AppSettings>
+  saveSettings: (settings: AppSettings) => Promise<AppSettings>
+  isRuntimeRunning: () => boolean
+}
+
+const DEFAULT_PACK_ID = 'web'
+
+export async function migrateToPackHomesV2(deps: PackHomeMigrationDeps): Promise<void> {
+  if (deps.isRuntimeRunning()) return // 运行中不动激活指针，下次启动再补
+  const settings = await deps.readStoredSettings()
+  const now = new Date().toISOString()
+  const records = await readPackRegistry(deps.registryPath)
+  // 已迁移就不再跑：注册表为空 = 用户删光了所有包（零包引导态），绝不能重建复活。
+  if (settings.packsV2Migrated) return
+
+  // 这两类包都住在默认家目录里；那个目录若已有 DSH 数据，就是命令行部署留下的。
+  const native = await homeHasNativeDshData(settings.dshHome)
+  const profileRoot = path.join(settings.dshHome, 'profiles')
+  const entries = await readdir(profileRoot, { withFileTypes: true }).catch(() => [])
+  /**
+   * 默认家目录里到底有没有东西可收编：DSH 自己跑出来的数据，或早年留下的 Profile 目录。
+   * 全新安装是空目录 —— 这种情况下一个包都不许建，首启的实例列表必须是 0 条。
+   * 整合包只由用户点「新建实例 / 导入」产生。
+   */
+  const hasLegacyData = native || entries.some(entry => entry.isDirectory()
+    && isSafeProfileName(entry.name)
+    && entry.name !== 'node_modules'
+    && !isDesktopHomeProfile(entry.name))
+
+  // 1) 默认包：homePath 缺省（永远跟随用户可改的默认家目录）。
+  if (hasLegacyData && !records.some(record => record.id === DEFAULT_PACK_ID)) {
+    await upsertPackRecord(deps.registryPath, {
+      id: DEFAULT_PACK_ID,
+      name: DEFAULT_PACK_ID,
+      description: '',
+      version: '1.0.0',
+      ...(settings.dshVersion ? { dshVersion: settings.dshVersion } : {}),
+      ...(native ? { native: true } : {}),
+      source: 'created',
+      installedAt: now,
+      updatedAt: now,
+      state: 'complete',
+      plugins: [],
+    })
+  }
+
+  // 2) 存量共享 Profile → 包（不设 homePath = 共用默认家目录）。
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !isSafeProfileName(entry.name)) continue
+    if (entry.name === DEFAULT_PACK_ID || entry.name === 'node_modules') continue
+    // 官方桌面端独占的那个目录不能收编成包：一旦它进了注册表，用户就能切换它，
+    // 而 `profileName` 一变成 `desktop`，插件开关、市场安装、启动参数那一大片代码
+    // 就全都改朝它的目录写——那正是 electron/profile.ts:isDesktopHomeProfile 要挡的事。
+    if (isDesktopHomeProfile(entry.name)) continue
+    const existing = await readPackRegistry(deps.registryPath)
+    if (existing.some(record => record.id === entry.name)) continue
+    const metadata = await readProfileMetadata(settings.dshHome, entry.name).catch(() => null)
+    await upsertPackRecord(deps.registryPath, {
+      id: entry.name,
+      name: metadata?.name || entry.name,
+      description: metadata?.description ?? '',
+      version: '1.0.0',
+      ...(metadata?.dshVersion ? { dshVersion: metadata.dshVersion } : {}),
+      ...(native ? { native: true } : {}),
+      source: 'created',
+      installedAt: metadata?.createdAt ?? now,
+      updatedAt: now,
+      state: 'complete',
+      plugins: [],
+    })
+  }
+
+  // 3) 激活指针兜底：指向当前 profileName 对应的包；不存在则回默认包，一个包都没有就是 null
+  //    （零包引导态，与删掉最后一个包时的落点一致 —— 绝不凭空指向一个不存在的包）。
+  const finalRecords = await readPackRegistry(deps.registryPath)
+  const wanted = settings.activePackId ?? settings.profileName
+  const activeId = finalRecords.some(record => record.id === wanted)
+    ? wanted
+    : finalRecords.some(record => record.id === DEFAULT_PACK_ID) ? DEFAULT_PACK_ID : null
+  await deps.saveSettings({
+    ...settings,
+    activePackId: activeId,
+    ...(activeId ? { profileName: activeId } : {}),
+    packsV2Migrated: true,
+  })
+}
