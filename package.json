@@ -18,7 +18,7 @@
   },
   "homepage": "https://github.com/YukimuraSol/DSL-Offline",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.22.2"
   },
   "type": "module",
   "main": "dist-electron/main.js",

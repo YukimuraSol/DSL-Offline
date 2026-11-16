@@ -176,8 +176,8 @@ DSH 进程、Profile、本地运行时、GitHub、Node/pnpm
 
 CI 工作流 `.github/workflows/ci.yml` 包含：
 
-- Ubuntu/Windows × Node 20/22 测试矩阵；
-- Windows Node 20 类型检查与构建；
+- Ubuntu/Windows × Node 22/24 测试矩阵；
+- Windows Node 22 类型检查与构建；
 - 测试和构建成功后打包 Windows portable，并上传 artifact。
 
 Release 工作流 `.github/workflows/release.yml` 在 `v*` tag 上运行：

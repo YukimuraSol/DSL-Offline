@@ -109,8 +109,16 @@ describe('defaultSettings', () => {
   })
 
   it('packsRootInsideInstall 把安装目录本身当父目录（不是 dirname）', () => {
-    expect(packsRootInsideInstall('D:\\DSH Pack Launcher')).toBe('D:\\DSH Pack Launcher\\dsh-packs')
-    expect(packsRootInsideInstall('D:\\DSH Pack Launcher\\')).toBe('D:\\DSH Pack Launcher\\dsh-packs')
+    // 这个函数用的是宿主机的 path.join，分隔符随平台变化（Linux 上是 /）。
+    // 所以比较前先把分隔符统一：断言的是「父目录 = 安装目录本身，末段是 dsh-packs」这个语义，
+    // 不是作者机器上的某个固定分隔符。
+    const asPosix = (value: string) => path.posix.normalize(value.replace(/\\/g, '/'))
+    expect(asPosix(packsRootInsideInstall('D:\\DSH Pack Launcher'))).toBe('D:/DSH Pack Launcher/dsh-packs')
+    expect(asPosix(packsRootInsideInstall('D:\\DSH Pack Launcher\\'))).toBe('D:/DSH Pack Launcher/dsh-packs')
+    // 再钉住语义：末段就是 dsh-packs，父目录就是安装目录本身。
+    const root = packsRootInsideInstall('D:\\DSH Pack Launcher')
+    expect(path.basename(root)).toBe('dsh-packs')
+    expect(asPosix(path.dirname(root))).toBe('D:/DSH Pack Launcher')
   })
 
   it('用户显式设置过 packsRoot 时，安装位置不覆盖它', () => {

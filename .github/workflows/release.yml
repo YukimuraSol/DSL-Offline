@@ -35,7 +35,7 @@ jobs:
       - name: 安装 Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
 
       # 防止打出版本号与标签不符的安装包。
