@@ -107,13 +107,25 @@ export function parseSessionLogText(text: string): UsageRecord[] {
   return foldUsageRecords(found)
 }
 
-/** 多帧拼接的 zstd 容器逐帧解码；尾部撕裂帧解码失败时跳过。无 zstd 能力时返回空串。 */
+/**
+ * 多帧拼接的 zstd 容器逐帧解码；尾部撕裂帧解码失败时跳过。无 zstd 能力时返回空串。
+ *
+ * 按魔数切段后再逐段解，而不是把尾巴一起丢给 zstdDecompressSync：整段解码的行为随 Node
+ * 大版本变（Node 22 解完第一帧就停，Node 24 遇到尾部残帧直接抛），只有切成单帧才稳定，
+ * 否则 Node 24 上一条日志都读不出来（测试里的多帧容器就是这条回归的守卫）。
+ */
 export function decodeZstdFrames(buffer: Buffer): string {
   if (typeof zstdDecompressSync !== 'function') return ''
-  let text = ''
+  const starts: number[] = []
   for (let offset = buffer.indexOf(ZSTD_MAGIC); offset >= 0; offset = buffer.indexOf(ZSTD_MAGIC, offset + 1)) {
+    starts.push(offset)
+  }
+  let text = ''
+  for (let index = 0; index < starts.length; index += 1) {
+    const start = starts[index]
+    const end = starts[index + 1] ?? buffer.length
     try {
-      text += zstdDecompressSync(buffer.subarray(offset)).toString('utf8')
+      text += zstdDecompressSync(buffer.subarray(start, end)).toString('utf8')
     } catch {
       // 帧不完整（写入中撕裂）：跳过该帧。
     }

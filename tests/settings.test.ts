@@ -88,24 +88,28 @@ describe('defaultSettings', () => {
   })
 
   it('把整合包根目录放进安装目录内部（装到 D 盘就落 D 盘，且在 {app} 里）', () => {
+    // 守卫靠的是宿主平台的 path.isAbsolute / path.join，所以安装目录用原生绝对路径拼。
+    // 「D 盘」只是作者机器上的例子；这里断言的是位置关系，不是盘符。
+    const installRoot = path.join(os.tmpdir(), 'DSH Pack Launcher')
+    const userDataPath = path.join(os.tmpdir(), 'dsh-launcher')
     const settings = defaultSettings({
-      homeDirectory: 'C:\\Users\\tester',
-      documentsDirectory: 'C:\\Users\\tester\\Documents',
-      userDataPath: 'C:\\Users\\tester\\AppData\\Roaming\\dsh-launcher',
-      installLocation: 'D:\\Programs\\DSH Pack Launcher',
-      platform: 'win32',
+      homeDirectory: path.join(os.tmpdir(), 'home-tester'),
+      documentsDirectory: path.join(os.tmpdir(), 'Documents'),
+      userDataPath,
+      installLocation: installRoot,
     })
     // 目标：packsRoot 在安装目录内部，不是兄弟目录。
     // 卸载不删包的保证来自 build/installer.iss 的 [UninstallDelete] 段：
     // 那里只剩一条不递归的 Type: dirifempty; Name: "{app}"（旧版那条
     // Type: filesandordirs; Name: "{app}" 会递归删掉整包，已删除），
     // 于是卸载只按自己的卸载日志删 [Files] 装进去的东西，运行时才出现的 dsh-packs 原样保留。
-    expect(settings.packsRoot).toBe('D:\\Programs\\DSH Pack Launcher\\dsh-packs')
+    expect(settings.packsRoot).toBe(path.join(installRoot, 'dsh-packs'))
     // 明确不是兄弟目录
-    expect(settings.packsRoot).not.toBe('D:\\Programs\\dsh-packs')
+    expect(settings.packsRoot).not.toBe(path.join(path.dirname(installRoot), 'dsh-packs'))
     // 在安装目录内部
-    expect(path.dirname(settings.packsRoot ?? '')).toBe('D:\\Programs\\DSH Pack Launcher')
-    expect(settings.packsRoot?.startsWith('C:')).toBe(false)
+    expect(path.dirname(settings.packsRoot ?? '')).toBe(installRoot)
+    // 也绝不能退回 userData 下面的缺省位置
+    expect(settings.packsRoot?.startsWith(userDataPath)).toBe(false)
   })
 
   it('packsRootInsideInstall 把安装目录本身当父目录（不是 dirname）', () => {
