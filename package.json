@@ -53,21 +53,21 @@
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/yauzl": "^3.4.0",
     "@types/yazl": "^3.3.1",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^6.3.0",
     "electron": "^45.3.1",
     "electron-builder": "^26.18.0",
-    "jsdom": "^27.4.0",
+    "jsdom": "^31.0.0",
     "typescript": "^7.0.2",
-    "vite": "^8.2.1",
+    "vite": "^8.3.8",
     "vite-node": "^6.0.0",
-    "vite-plugin-electron": "^1.1.1",
+    "vite-plugin-electron": "^1.2.0",
     "vite-plugin-electron-renderer": "^1.0.0",
-    "vitest": "^4.1.10"
+    "vitest": "^5.1.0"
   },
   "build": {
     "appId": "com.local.dshlauncher",
