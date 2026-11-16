@@ -39,7 +39,7 @@
     "package:inno": "node scripts/build-installer.mjs"
   },
   "dependencies": {
-    "@xmldom/xmldom": "^0.8.14",
+    "@xmldom/xmldom": "^0.9.12",
     "adm-zip": "^0.6.0",
     "koffi": "^3.1.5",
     "lucide-react": "^1.31.0",
