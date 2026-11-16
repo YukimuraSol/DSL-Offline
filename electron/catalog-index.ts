@@ -41,6 +41,9 @@ export function serializeCatalogIndex(entries: CatalogIndexEntry[]): string {
   const implementation = new DOMImplementation()
   const document = implementation.createDocument(null, 'dsh-catalog', null)
   const root = document.documentElement
+  // xmldom 0.9 起 documentElement 的类型是 Element | null（以前是不带 null 的 Element）。
+  // createDocument 给了根节点名，正常不会走到这里；真为空就别往下拼半个文档。
+  if (!root) throw new Error('无法创建共享检测索引的根节点。')
   root.setAttribute('schema', CATALOG_INDEX_SCHEMA)
   for (const entry of [...entries].sort(catalogEntryOrder)) {
     const element = document.createElement('repository')
@@ -64,15 +67,23 @@ export function serializeCatalogIndex(entries: CatalogIndexEntry[]): string {
 
 export function parseCatalogIndex(xml: string): CatalogIndexEntry[] {
   const parseErrors: string[] = []
-  const document = new DOMParser({
-    errorHandler: {
-      warning: () => undefined,
-      error: message => parseErrors.push(message),
-      fatalError: message => parseErrors.push(message),
-    },
-  }).parseFromString(xml, 'application/xml')
+  let document: ReturnType<DOMParser['parseFromString']>
+  try {
+    document = new DOMParser({
+      // xmldom 0.9 的签名统一成 onError(level, message)：0.8 的
+      // errorHandler.warning/error/fatalError 三件套已删除。warning 仍然忽略，
+      // error 与 fatalError 收集起来，和 0.8 时的判据一致。
+      onError: (level, message) => {
+        if (level !== 'warning') parseErrors.push(message)
+      },
+    }).parseFromString(xml, 'application/xml')
+  } catch {
+    // 0.9 遇到 fatalError 一定从 parseFromString 抛出 ParseError，
+    // 这里收成同一句面向用户的错误，调用方不必区分两种失败来源。
+    throw new Error('共享检测索引不是受支持的 XML 格式。')
+  }
   const root = document.documentElement
-  if (parseErrors.length > 0 || root?.tagName !== 'dsh-catalog' || root.getAttribute('schema') !== CATALOG_INDEX_SCHEMA) {
+  if (parseErrors.length > 0 || !root || root.tagName !== 'dsh-catalog' || root.getAttribute('schema') !== CATALOG_INDEX_SCHEMA) {
     throw new Error('共享检测索引不是受支持的 XML 格式。')
   }
   const entries = new Map<string, CatalogIndexEntry>()
